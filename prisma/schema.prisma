@@ -1,0 +1,61 @@
+// ISW Wave — Prisma schema (Phase 1)
+// Uses the LibSQL driver adapter: a plain local SQLite file in dev, and a
+// hosted Turso/LibSQL instance in production (see src/lib/db.ts).
+// Modeled with eventId foreign keys everywhere so Phase 5 multi-tenancy does
+// not require a rewrite, even though Phase 1 only ever has one Event row.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Event {
+  id   String @id @default(cuid())
+  name String
+
+  // --- Settings live directly on the Event (feature #3 Settings panel) ---
+  requestLimit Int    @default(3) // max pending/queued requests per identified user
+  approvalMode String @default("manual") // "manual" | "auto"
+
+  // Which request is currently playing on the admin (audio) player.
+  currentRequestId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requests Request[] @relation("EventRequests")
+  current  Request?  @relation("CurrentlyPlaying", fields: [currentRequestId], references: [id])
+}
+
+model Request {
+  id                 String @id @default(cuid())
+  eventId            String
+  youtubeVideoId     String
+  title              String
+  thumbnailUrl       String
+  durationSeconds    Int
+  channelName        String @default("")
+  requesterName      String
+  requesterSessionId String
+
+  // pending | approved | rejected | played
+  status String @default("pending")
+
+  // Order within the approved queue. Null unless status = approved.
+  queuePosition Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  event         Event  @relation("EventRequests", fields: [eventId], references: [id])
+  // Back-relation for Event.current (a request may be the one now playing).
+  nowPlayingFor Event? @relation("CurrentlyPlaying")
+
+  @@index([eventId, status])
+  @@index([requesterSessionId])
+}
