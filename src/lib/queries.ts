@@ -41,13 +41,14 @@ export function toPublicRequest(r: {
   };
 }
 
-// Count a session's "active" requests (pending or approved/queued) — used to
-// enforce the per-user request limit server-side.
-export async function countActiveRequests(sessionId: string): Promise<number> {
+// Count a user's "active" requests (pending or approved/queued) — used to
+// enforce the per-user request limit server-side. Phase 2: keyed by userId
+// (durable) instead of the Phase-1 anonymous session id.
+export async function countActiveRequests(userId: string): Promise<number> {
   return prisma.request.count({
     where: {
       eventId: EVENT_ID,
-      requesterSessionId: sessionId,
+      userId,
       status: { in: [STATUS.PENDING, STATUS.APPROVED] },
     },
   });

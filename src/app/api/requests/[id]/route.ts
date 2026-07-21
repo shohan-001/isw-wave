@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { EVENT_ID, STATUS } from "@/lib/constants";
-import { isAdmin } from "@/lib/admin";
+import { requireAdmin } from "@/lib/auth";
 import { getEvent, nextQueuePosition, toPublicRequest } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ export async function PATCH(
   req: Request,
   { params }: { params: { id: string } }
 ) {
-  if (!isAdmin()) {
+  if (!(await requireAdmin())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

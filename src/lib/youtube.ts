@@ -1,4 +1,5 @@
 import "server-only";
+import { MIN_SONG_SECONDS } from "./constants";
 
 // --- YouTube Data API v3 search (server-side only) ------------------------
 //
@@ -9,6 +10,11 @@ import "server-only";
 // The client enforces a 500ms debounce AND an explicit Search button so typing
 // can't drain the quota. search.list does not return video duration, so we make
 // one extra videos.list call (contentDetails, 1 unit) to fetch durations.
+//
+// Phase 2: results shorter than MIN_SONG_SECONDS (default 60s) are dropped so
+// Shorts/teasers (0:06, 0:15…) never appear as requestable songs. search.list
+// costs the same 100 units for 10 or 40 results, so we over-fetch and trim to
+// `maxResults` AFTER filtering to still return a full page of usable tracks.
 
 export type SearchResult = {
   youtubeVideoId: string;
@@ -46,20 +52,22 @@ type YtVideoItem = {
 
 export async function searchYouTube(
   query: string,
-  maxResults = 10
+  maxResults = 10,
+  minSeconds = MIN_SONG_SECONDS
 ): Promise<SearchResult[]> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) {
     throw new Error("YOUTUBE_API_KEY is not set");
   }
 
-  // 1) search.list — top N music/video results for the query.
+  // 1) search.list — over-fetch (same 100-unit cost) so that after dropping
+  // short clips we can still return a full page of `maxResults` usable tracks.
   const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
   searchUrl.searchParams.set("key", key);
   searchUrl.searchParams.set("part", "snippet");
   searchUrl.searchParams.set("type", "video");
   searchUrl.searchParams.set("videoEmbeddable", "true"); // must be embeddable in our player
-  searchUrl.searchParams.set("maxResults", String(maxResults));
+  searchUrl.searchParams.set("maxResults", String(Math.min(50, maxResults * 3)));
   searchUrl.searchParams.set("q", query);
 
   const searchRes = await fetch(searchUrl, { cache: "no-store" });
@@ -87,16 +95,22 @@ export async function searchYouTube(
     }
   }
 
-  return items.map((i) => {
-    const t = i.snippet.thumbnails;
-    return {
-      youtubeVideoId: i.id.videoId,
-      title: decodeHtml(i.snippet.title),
-      channelName: decodeHtml(i.snippet.channelTitle),
-      thumbnailUrl: t.medium?.url || t.high?.url || t.default?.url || "",
-      durationSeconds: durationById.get(i.id.videoId) ?? 0,
-    };
-  });
+  return items
+    .map((i) => {
+      const t = i.snippet.thumbnails;
+      return {
+        youtubeVideoId: i.id.videoId,
+        title: decodeHtml(i.snippet.title),
+        channelName: decodeHtml(i.snippet.channelTitle),
+        thumbnailUrl: t.medium?.url || t.high?.url || t.default?.url || "",
+        durationSeconds: durationById.get(i.id.videoId) ?? 0,
+      };
+    })
+    // Drop Shorts/teasers below the minimum. A duration of 0 means we couldn't
+    // resolve it (videos.list miss) — exclude those too rather than risk
+    // surfacing a 6-second clip.
+    .filter((r) => r.durationSeconds >= minSeconds)
+    .slice(0, maxResults);
 }
 
 // YouTube titles arrive HTML-entity encoded (e.g. &amp;, &#39;). Decode the

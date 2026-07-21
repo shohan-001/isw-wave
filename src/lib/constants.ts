@@ -4,9 +4,14 @@
 // constant and resolve the event per-request/subdomain instead.
 export const EVENT_ID = "isw-wave-main-event";
 
-// Cookie names.
-export const SESSION_COOKIE = "isw_session";
-export const ADMIN_COOKIE = "isw_admin";
+// Cookie names. Phase 2 replaces the anonymous session + shared-password admin
+// cookies with a single signed auth cookie carrying the logged-in user's id.
+export const AUTH_COOKIE = "isw_auth";
+
+// Minimum duration (seconds) for a YouTube result to be requestable. Filters
+// out Shorts/teasers (0:06, 0:15…) that aren't usable as queue songs. Override
+// with MIN_SONG_SECONDS in the environment.
+export const MIN_SONG_SECONDS = Number(process.env.MIN_SONG_SECONDS) || 60;
 
 // Statuses (kept as string constants to match the SQLite string columns).
 export const STATUS = {

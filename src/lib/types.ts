@@ -1,5 +1,13 @@
 // Shared types + tiny helpers usable on client and server (no server-only deps).
 
+// Client-safe view of the logged-in account (never includes the password hash).
+export type AuthUser = {
+  id: string;
+  username: string;
+  email: string;
+  isAdmin: boolean;
+};
+
 export type PublicRequest = {
   id: string;
   youtubeVideoId: string;

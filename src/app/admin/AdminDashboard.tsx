@@ -97,8 +97,8 @@ export function AdminDashboard() {
   }
 
   async function logout() {
-    await fetch("/api/admin/login", { method: "DELETE" });
-    window.location.reload();
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
   }
 
   return (
@@ -141,11 +141,37 @@ export function AdminDashboard() {
               <PlayerStateTag state={player.state} />
             </div>
 
-            <div className="overflow-hidden rounded-2xl bg-black">
+            <div className="relative overflow-hidden rounded-2xl bg-black">
               {/* Active audio-producing player (required visible by YT ToS). */}
               <div className="aspect-video w-full">
                 <div ref={player.mainRef} className="h-full w-full" />
               </div>
+
+              {/* One-time gesture unlock for browser autoplay policy. Shown
+                  until the first user-initiated play; after that, auto-advance
+                  between songs autoplays on its own. */}
+              <AnimatePresence>
+                {now && !player.audioUnlocked && player.ready && (
+                  <motion.button
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={player.unlock}
+                    className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-ink/80 backdrop-blur-sm"
+                  >
+                    <span className="flex h-16 w-16 items-center justify-center rounded-full bg-wave text-2xl shadow-glow">
+                      ▶
+                    </span>
+                    <span className="font-display text-lg font-bold text-white">
+                      Tap to enable audio
+                    </span>
+                    <span className="max-w-xs text-center text-xs text-white/50">
+                      Browsers require one tap before sound can play. After this,
+                      songs advance automatically.
+                    </span>
+                  </motion.button>
+                )}
+              </AnimatePresence>
             </div>
             {/* Hidden preload player instance. */}
             <div

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { EVENT_ID, STATUS } from "@/lib/constants";
-import { getSessionId } from "@/lib/session";
-import { isAdmin } from "@/lib/admin";
+import { getCurrentUser, requireAdmin } from "@/lib/auth";
 import {
   getEvent,
   countActiveRequests,
@@ -13,16 +12,15 @@ import {
 export const dynamic = "force-dynamic";
 
 // POST /api/requests
-// Body: { youtubeVideoId, title, thumbnailUrl, durationSeconds, channelName,
-//         requesterName }
-// Creates a request for the current session. Enforces the per-user active
-// limit (Event.requestLimit) server-side. If the event is in "auto" approval
-// mode, the request is approved immediately and appended to the queue.
+// Body: { youtubeVideoId, title, thumbnailUrl, durationSeconds, channelName }
+// Creates a request for the logged-in user. Enforces the per-user active limit
+// (Event.requestLimit) server-side, keyed by userId so it survives cookie loss.
+// The requester name is taken from the account (username), not the request body.
 export async function POST(req: Request) {
-  const sessionId = getSessionId();
-  if (!sessionId) {
+  const user = await getCurrentUser();
+  if (!user) {
     return NextResponse.json(
-      { error: "No session. Reload the page and try again." },
+      { error: "Please log in to request a song." },
       { status: 401 }
     );
   }
@@ -33,21 +31,16 @@ export async function POST(req: Request) {
     thumbnailUrl?: string;
     durationSeconds?: number;
     channelName?: string;
-    requesterName?: string;
   } | null;
 
   if (!body?.youtubeVideoId || !body.title) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
-  const requesterName = (body.requesterName || "").trim().slice(0, 40);
-  if (!requesterName) {
-    return NextResponse.json({ error: "Name is required." }, { status: 400 });
-  }
 
   const event = await getEvent();
 
-  // Enforce the configurable per-user active-request limit.
-  const active = await countActiveRequests(sessionId);
+  // Enforce the configurable per-user active-request limit (keyed by userId).
+  const active = await countActiveRequests(user.id);
   if (active >= event.requestLimit) {
     return NextResponse.json(
       {
@@ -69,34 +62,51 @@ export async function POST(req: Request) {
       thumbnailUrl: body.thumbnailUrl || "",
       durationSeconds: Math.max(0, Math.floor(body.durationSeconds || 0)),
       channelName: (body.channelName || "").slice(0, 100),
-      requesterName,
-      requesterSessionId: sessionId,
+      userId: user.id,
+      requesterName: user.username,
       status: autoApprove ? STATUS.APPROVED : STATUS.PENDING,
       queuePosition: autoApprove ? await nextQueuePosition() : null,
     },
   });
 
-  return NextResponse.json({ request: toPublicRequest(created) }, { status: 201 });
+  return NextResponse.json(
+    {
+      request: toPublicRequest(created),
+      used: active + 1,
+      limit: event.requestLimit,
+    },
+    { status: 201 }
+  );
 }
 
-// GET /api/requests?status=pending    -> admin: list by status (default pending)
-// GET /api/requests?mine=1            -> current session's own requests
+// GET /api/requests?mine=1        -> current user's own requests + quota
+// GET /api/requests?status=...    -> admin: list by status (default pending)
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const mine = searchParams.get("mine");
 
   if (mine) {
-    const sessionId = getSessionId();
-    if (!sessionId) return NextResponse.json({ requests: [] });
-    const rows = await prisma.request.findMany({
-      where: { eventId: EVENT_ID, requesterSessionId: sessionId },
-      orderBy: { createdAt: "desc" },
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ requests: [], used: 0, limit: 0 });
+    }
+    const [rows, event, active] = await Promise.all([
+      prisma.request.findMany({
+        where: { eventId: EVENT_ID, userId: user.id },
+        orderBy: { createdAt: "desc" },
+      }),
+      getEvent(),
+      countActiveRequests(user.id),
+    ]);
+    return NextResponse.json({
+      requests: rows.map(toPublicRequest),
+      used: active,
+      limit: event.requestLimit,
     });
-    return NextResponse.json({ requests: rows.map(toPublicRequest) });
   }
 
   // Admin-only listing.
-  if (!isAdmin()) {
+  if (!(await requireAdmin())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const status = searchParams.get("status") || STATUS.PENDING;

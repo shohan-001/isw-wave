@@ -57,6 +57,12 @@ export function useYouTubePlayer({
   const [ready, setReady] = useState(false);
   const [state, setState] = useState<PlayerState>("unstarted");
   const [volume, setVolumeState] = useState(80);
+  // Browser autoplay policy blocks programmatic playback with sound until the
+  // user has interacted with the player once. We track that here: until the
+  // first user-gesture play, `needsGesture` is true so the dashboard can show a
+  // one-time "Tap to enable audio" overlay. After that, auto-advance between
+  // songs can autoplay programmatically without issue.
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
 
   // Keep the latest onEnded in a ref so the YT event handler (bound once)
   // always calls the current callback.
@@ -76,7 +82,9 @@ export function useYouTubePlayer({
       mainPlayer.current = new YT.Player(mainRef.current, {
         height: "100%",
         width: "100%",
-        playerVars: { autoplay: 0, controls: 1, rel: 0, modestbranding: 1 },
+        // autoplay:1 so a loaded video starts on its own once audio is unlocked;
+        // the first play still needs a user gesture (see unlock()).
+        playerVars: { autoplay: 1, controls: 1, rel: 0, modestbranding: 1 },
         events: {
           onReady: () => {
             setReady(true);
@@ -94,6 +102,9 @@ export function useYouTubePlayer({
               5: "cued",
             };
             setState(map[e.data] ?? "unstarted");
+            // Reaching "playing" means audio is flowing — mark unlocked so the
+            // overlay drops and future auto-advances autoplay silently.
+            if (e.data === 1) setAudioUnlocked(true);
             if (e.data === 0) onEndedRef.current();
           },
         },
@@ -115,7 +126,9 @@ export function useYouTubePlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load the current video when it changes.
+  // Load the current video when it changes. loadVideoById starts playback; if
+  // audio isn't unlocked yet the browser may hold it silent/paused until the
+  // user taps "enable audio" (unlock()).
   useEffect(() => {
     if (!ready || !mainPlayer.current) return;
     if (videoId) {
@@ -140,14 +153,27 @@ export function useYouTubePlayer({
     mainPlayer.current?.setVolume?.(v);
   }, []);
 
+  // One-time user-gesture unlock. Called from the "Tap to enable audio" overlay
+  // at the start of the event: it plays within a genuine click handler, which
+  // satisfies the browser autoplay policy. onStateChange → "playing" then sets
+  // audioUnlocked and the overlay disappears.
+  const unlock = useCallback(() => {
+    mainPlayer.current?.playVideo?.();
+    // Optimistically mark unlocked so the overlay dismisses immediately even if
+    // there's nothing to play yet; real playback confirms it via onStateChange.
+    setAudioUnlocked(true);
+  }, []);
+
   return {
     mainRef,
     preloadRef,
     ready,
     state,
     volume,
+    audioUnlocked,
     play,
     pause,
     setVolume,
+    unlock,
   };
 }

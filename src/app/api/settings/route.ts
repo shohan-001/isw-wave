@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { EVENT_ID } from "@/lib/constants";
-import { isAdmin } from "@/lib/admin";
+import { requireAdmin } from "@/lib/auth";
 import { getEvent } from "@/lib/queries";
 import type { Settings } from "@/lib/types";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 // GET /api/settings  (admin only) — current event settings for the admin panel.
 export async function GET() {
-  if (!isAdmin()) {
+  if (!(await requireAdmin())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const event = await getEvent();
@@ -23,7 +23,7 @@ export async function GET() {
 // PATCH /api/settings  (admin only)
 // Body: { requestLimit?, approvalMode? }
 export async function PATCH(req: Request) {
-  if (!isAdmin()) {
+  if (!(await requireAdmin())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = (await req.json().catch(() => ({}))) as Partial<Settings>;
