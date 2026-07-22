@@ -84,8 +84,9 @@ export async function POST(req: Request) {
     data,
   });
 
-  // Only broadcast when the now-playing *track* changes — not every tick.
-  if (hasFallback || body.resetTimeline) {
+  // Only broadcast when the now-playing *track* changes — never on timeline ticks
+  // or resetTimeline (those were spamming every client with queue refetches).
+  if (hasFallback) {
     await notifyQueue(admin.eventId);
   }
 

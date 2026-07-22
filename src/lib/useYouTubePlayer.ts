@@ -2,12 +2,6 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 
-// --- YouTube IFrame API loader (single shared promise) --------------------
-// This is the ACTIVE, audio-producing player. Per the brief, it lives ONLY on
-// the admin dashboard (the laptop wired to venue speakers). The public display
-// page is silent. Keeping a visible player here is also a YouTube ToS
-// requirement — do not hide it.
-
 let apiPromise: Promise<void> | null = null;
 function loadYouTubeAPI(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
@@ -63,18 +57,20 @@ export function useYouTubePlayer({
     onEndedRef.current = onEnded;
   }, [onEnded]);
 
-  // Prevent double-advance: YT often fires ENDED more than once, and may fire
-  // ENDED again while the next video is loading — that used to skip songs.
   const videoIdRef = useRef<string | null>(videoId);
+  const loadedIdRef = useRef<string | null>(null);
   const endedForVideoRef = useRef<string | null>(null);
   const ignoreEndedUntilRef = useRef(0);
+  const pendingPlayRef = useRef(false);
+  const audioUnlockedRef = useRef(false);
 
   useEffect(() => {
     videoIdRef.current = videoId;
-    endedForVideoRef.current = null;
-    // Ignore ENDED for a moment after a track change (load transitions).
-    ignoreEndedUntilRef.current = Date.now() + 1500;
   }, [videoId]);
+
+  useEffect(() => {
+    audioUnlockedRef.current = audioUnlocked;
+  }, [audioUnlocked]);
 
   useEffect(() => {
     let cancelled = false;
@@ -103,15 +99,37 @@ export function useYouTubePlayer({
               5: "cued",
             };
             setState(map[e.data] ?? "unstarted");
-            if (e.data === 1) setAudioUnlocked(true);
+
+            if (e.data === 1) {
+              setAudioUnlocked(true);
+              pendingPlayRef.current = false;
+            }
+
+            // After loadVideoById, play once when cued (avoids restart loops).
+            if (e.data === 5 && pendingPlayRef.current) {
+              pendingPlayRef.current = false;
+              try {
+                mainPlayer.current?.playVideo?.();
+              } catch {
+                /* ignore */
+              }
+            }
 
             if (e.data === 0) {
               if (Date.now() < ignoreEndedUntilRef.current) return;
               const vid = videoIdRef.current;
-              if (!vid) return;
-              if (endedForVideoRef.current === vid) return;
+              if (!vid || endedForVideoRef.current === vid) return;
               endedForVideoRef.current = vid;
               onEndedRef.current();
+              // If advance fails and the same track is still loaded, allow retry.
+              window.setTimeout(() => {
+                if (
+                  loadedIdRef.current === vid &&
+                  endedForVideoRef.current === vid
+                ) {
+                  endedForVideoRef.current = null;
+                }
+              }, 4000);
             }
           },
         },
@@ -129,29 +147,22 @@ export function useYouTubePlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load + explicitly play so auto-advance works after a track ends.
+  // Load a video only when the id actually changes — never re-load the same
+  // track (that caused "plays a few seconds again then skips").
   useEffect(() => {
     if (!ready || !mainPlayer.current) return;
-    if (videoId) {
-      mainPlayer.current.loadVideoById(videoId);
-      // loadVideoById alone often leaves the next track paused after ENDED.
-      const tryPlay = () => {
-        try {
-          mainPlayer.current?.playVideo?.();
-        } catch {
-          /* ignore */
-        }
-      };
-      tryPlay();
-      // Retry shortly — YT sometimes ignores the first playVideo during load.
-      const t1 = window.setTimeout(tryPlay, 250);
-      const t2 = window.setTimeout(tryPlay, 800);
-      return () => {
-        window.clearTimeout(t1);
-        window.clearTimeout(t2);
-      };
+    if (!videoId) {
+      loadedIdRef.current = null;
+      mainPlayer.current.stopVideo?.();
+      return;
     }
-    mainPlayer.current.stopVideo?.();
+    if (loadedIdRef.current === videoId) return;
+
+    loadedIdRef.current = videoId;
+    endedForVideoRef.current = null;
+    ignoreEndedUntilRef.current = Date.now() + 2500;
+    pendingPlayRef.current = true;
+    mainPlayer.current.loadVideoById(videoId);
   }, [videoId, ready]);
 
   useEffect(() => {

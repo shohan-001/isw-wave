@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useQueuePolling } from "@/lib/useQueuePolling";
 import { formatDuration, type PublicRequest } from "@/lib/types";
@@ -31,8 +31,8 @@ export function DisplayClient({
   displayMode: "minimal" | "full";
 }) {
   void _accentColor;
-  // Poll often enough to re-anchor the synced timeline after refresh.
-  const { data } = useQueuePolling(2000, { eventId });
+  // Slow poll + Pusher; in-flight dedupe lives in useQueuePolling.
+  const { data } = useQueuePolling(10000, { eventId });
   const now = data?.nowPlaying ?? null;
   const queue = data?.queue ?? [];
 
@@ -83,8 +83,8 @@ export function DisplayClient({
           ) : null}
         </header>
 
-        {/* Main row: capped 16:9 art + QR — title lives below so it never clips */}
-        <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 content-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(200px,260px)] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(220px,280px)]">
+        {/* Art + title (left) / QR (right on desktop, below title on mobile) */}
+        <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(200px,260px)] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(220px,280px)]">
           <section className="flex min-h-0 flex-col">
             <AnimatePresence mode="wait">
               {now ? (
@@ -102,11 +102,29 @@ export function DisplayClient({
                     </span>
                   </div>
 
-                  {/* Cap height so progress + title stay on-screen */}
                   <div className="flex w-full justify-center">
-                    <div className="aspect-video h-[min(36vh,400px)] w-auto max-w-full overflow-hidden rounded-2xl sm:h-[min(40vh,440px)] sm:rounded-3xl lg:h-[min(42vh,480px)]">
+                    <div className="aspect-video h-[min(30vh,300px)] w-auto max-w-full overflow-hidden rounded-2xl sm:h-[min(36vh,400px)] sm:rounded-3xl lg:h-[min(42vh,480px)]">
                       <AlbumCarousel now={now} accent={accent} />
                     </div>
+                  </div>
+
+                  <div className="mt-3 shrink-0 sm:mt-4">
+                    <LinearProgress
+                      progress={progress}
+                      elapsed={elapsed}
+                      duration={now.durationSeconds}
+                    />
+                    <h1 className="mt-2 line-clamp-2 font-display text-xl font-bold leading-tight tracking-tight text-white drop-shadow-sm sm:text-3xl lg:text-4xl">
+                      {now.title}
+                    </h1>
+                    <p className="mt-1 truncate text-sm text-white/65 sm:text-base">
+                      {now.channelName}
+                      {data?.nowPlayingIsFallback
+                        ? " · fallback"
+                        : now.requesterName
+                        ? ` · requested by ${now.requesterName}`
+                        : ""}
+                    </p>
                   </div>
                 </motion.div>
               ) : (
@@ -114,9 +132,9 @@ export function DisplayClient({
                   key="empty"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="flex flex-1 items-center justify-center py-8"
+                  className="flex flex-1 items-center justify-center py-6"
                 >
-                  <GlassPanel className="max-w-md px-8 py-10 text-center">
+                  <GlassPanel className="max-w-md px-6 py-8 text-center sm:px-8 sm:py-10">
                     <EqualizerBars className="mx-auto mb-4 h-7 text-pulse" />
                     <h1 className="font-display text-2xl font-bold text-white sm:text-3xl">
                       Nothing playing yet
@@ -130,15 +148,17 @@ export function DisplayClient({
             </AnimatePresence>
           </section>
 
-          <aside className="flex shrink-0 self-start lg:self-stretch">
-            <GlassPanel className="flex w-full flex-col items-center justify-center p-3 sm:p-4 lg:max-h-[min(42vh,480px)] lg:p-5">
-              <p className="font-display text-[10px] font-semibold uppercase tracking-[0.28em] text-white/40">
-                Scan to request
-              </p>
-              <div className="mt-2 flex flex-1 items-center justify-center sm:mt-3">
-                <QRCodeBlock url={requestUrl} compact cinematic />
+          <aside className="flex shrink-0 lg:row-span-1 lg:self-start">
+            <GlassPanel className="flex w-full flex-row items-center gap-3 p-3 sm:gap-4 sm:p-4 lg:max-h-[min(42vh,480px)] lg:flex-col lg:justify-center lg:p-5">
+              <div className="shrink-0">
+                <p className="mb-1 text-center font-display text-[9px] font-semibold uppercase tracking-[0.28em] text-white/40 lg:text-[10px]">
+                  Scan to request
+                </p>
+                <div className="flex justify-center">
+                  <QRCodeBlock url={requestUrl} compact cinematic />
+                </div>
               </div>
-              <div className="mt-2 text-center sm:mt-3">
+              <div className="min-w-0 flex-1 text-left lg:mt-3 lg:text-center">
                 <p className="font-display text-[9px] font-medium uppercase tracking-[0.22em] text-white/35">
                   Event code
                 </p>
@@ -149,28 +169,6 @@ export function DisplayClient({
             </GlassPanel>
           </aside>
         </div>
-
-        {/* Dedicated title band — always visible above Up Next */}
-        {now ? (
-          <div className="mt-3 shrink-0 sm:mt-4">
-            <LinearProgress
-              progress={progress}
-              elapsed={elapsed}
-              duration={now.durationSeconds}
-            />
-            <h1 className="mt-2.5 line-clamp-2 font-display text-2xl font-bold leading-tight tracking-tight text-white drop-shadow-sm sm:text-3xl lg:text-4xl">
-              {now.title}
-            </h1>
-            <p className="mt-1 truncate text-sm text-white/65 sm:text-base">
-              {now.channelName}
-              {data?.nowPlayingIsFallback
-                ? " · fallback"
-                : now.requesterName
-                ? ` · requested by ${now.requesterName}`
-                : ""}
-            </p>
-          </div>
-        ) : null}
 
         {!isMinimal && (
           <div className="mt-3 shrink-0">
@@ -312,7 +310,10 @@ function VoteChip({ count, hot = false }: { count: number; hot?: boolean }) {
   );
 }
 
-/** Interpolate admin YouTube position between queue polls / after refresh. */
+/**
+ * Smooth local clock between sparse admin timeline snapshots.
+ * Re-anchors only on song change, play/pause, or >1.5s drift — avoids 2s jumps.
+ */
 function useSyncedElapsed(
   playback: {
     positionSec: number;
@@ -322,35 +323,68 @@ function useSyncedElapsed(
   songId: string | null
 ): number {
   const [elapsed, setElapsed] = useState(0);
+  const anchor = useRef<{
+    songId: string | null;
+    base: number;
+    atMs: number;
+    playing: boolean;
+  }>({ songId: null, base: 0, atMs: Date.now(), playing: false });
 
   useEffect(() => {
     if (!songId || !playback) {
+      anchor.current = {
+        songId: null,
+        base: 0,
+        atMs: Date.now(),
+        playing: false,
+      };
       setElapsed(0);
       return;
     }
 
-    const base = playback.positionSec || 0;
+    const serverBase = playback.positionSec || 0;
     const updatedMs = playback.updatedAt
       ? Date.parse(playback.updatedAt)
       : Date.now();
+    const serverNow = playback.playing
+      ? serverBase + Math.max(0, (Date.now() - updatedMs) / 1000)
+      : serverBase;
 
-    const compute = () => {
-      if (!playback.playing) return base;
-      const drift = Math.max(0, (Date.now() - updatedMs) / 1000);
-      return base + drift;
-    };
+    const prev = anchor.current;
+    const localNow = prev.playing
+      ? prev.base + (Date.now() - prev.atMs) / 1000
+      : prev.base;
+    const songChanged = prev.songId !== songId;
+    const playChanged = prev.playing !== playback.playing;
+    const drift = Math.abs(localNow - serverNow);
 
-    setElapsed(compute());
-    if (!playback.playing) return;
-
-    const id = setInterval(() => setElapsed(compute()), 250);
-    return () => clearInterval(id);
+    if (songChanged || playChanged || drift > 1.5) {
+      anchor.current = {
+        songId,
+        base: serverNow,
+        atMs: Date.now(),
+        playing: playback.playing,
+      };
+      setElapsed(serverNow);
+    } else {
+      anchor.current = { ...prev, playing: playback.playing };
+    }
   }, [
     songId,
     playback?.positionSec,
     playback?.playing,
     playback?.updatedAt,
   ]);
+
+  useEffect(() => {
+    if (!songId || !playback?.playing) return;
+    const id = setInterval(() => {
+      const a = anchor.current;
+      if (!a.playing || a.songId !== songId) return;
+      setElapsed(a.base + (Date.now() - a.atMs) / 1000);
+    }, 250);
+    return () => clearInterval(id);
+  }, [songId, playback?.playing]);
 
   return elapsed;
 }

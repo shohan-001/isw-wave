@@ -19,7 +19,7 @@ export function QRCodeBlock({
   useEffect(() => {
     QRCode.toDataURL(url, {
       margin: 1,
-      width: compact ? 240 : 320,
+      width: compact ? 180 : 320,
       color: {
         dark: cinematic ? "#07080c" : "#0b0a12",
         light: "#ffffff",
@@ -29,8 +29,9 @@ export function QRCodeBlock({
       .catch(() => setDataUrl(""));
   }, [url, compact, cinematic]);
 
+  // Compact = display sidebar / mobile row — keep small so it never covers art.
   const sizeClass = compact
-    ? "h-36 w-36 sm:h-40 sm:w-40 lg:h-44 lg:w-44"
+    ? "h-24 w-24 sm:h-32 sm:w-32 lg:h-40 lg:w-40"
     : "h-40 w-40 xl:h-48 xl:w-48";
 
   return (

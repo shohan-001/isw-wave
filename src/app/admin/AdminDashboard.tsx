@@ -37,7 +37,7 @@ export function AdminDashboard({
   eventSlug: string;
   initialAccent?: string;
 }) {
-  const { data, realtime, refetch } = useQueuePolling(5000, { eventId });
+  const { data, realtime, refetch } = useQueuePolling(8000, { eventId });
   // Queue API mirrors fallback onto nowPlaying for the hall display — never treat
   // that as a live request or we'll clear currentFallbackId in a tight loop.
   const now =
@@ -218,22 +218,22 @@ export function AdminDashboard({
     onEnded: advance,
   });
 
-  // Push YouTube timeline to the hall display (~2s). Silent — no Pusher spam.
+  // Push YouTube timeline sparingly — display interpolates between snapshots.
   useEffect(() => {
     if (!player.ready || !activeVideoId) return;
     const tick = () => {
-      const playing = player.state === "playing";
+      if (player.state !== "playing" && player.state !== "paused") return;
       void fetch("/api/playback", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           positionSec: player.getCurrentTime(),
-          playing,
+          playing: player.state === "playing",
         }),
       });
     };
     tick();
-    const id = setInterval(tick, 2000);
+    const id = setInterval(tick, 5000);
     return () => clearInterval(id);
   }, [player.ready, player.state, player.getCurrentTime, activeVideoId]);
 
