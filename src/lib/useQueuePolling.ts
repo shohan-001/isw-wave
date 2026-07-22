@@ -77,5 +77,5 @@ export function useQueuePolling(
     "settings:update": refetchQueue,
   });
 
-  return { data, error, realtime };
+  return { data, error, realtime, refetch: refetchQueue };
 }

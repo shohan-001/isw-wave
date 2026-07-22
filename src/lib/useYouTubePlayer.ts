@@ -13,7 +13,6 @@ function loadYouTubeAPI(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
   if (apiPromise) return apiPromise;
   apiPromise = new Promise<void>((resolve) => {
-    // Already loaded?
     // @ts-expect-error - YT is injected by the script
     if (window.YT && window.YT.Player) return resolve();
     const tag = document.createElement("script");
@@ -34,9 +33,9 @@ export type PlayerState =
   | "cued";
 
 type Props = {
-  videoId: string | null; // current now-playing video
-  nextVideoId: string | null; // preloaded so transitions have no dead air
-  onEnded: () => void; // fire "next"/mark-played when the video finishes
+  videoId: string | null;
+  nextVideoId: string | null;
+  onEnded: () => void;
   onReady?: () => void;
 };
 
@@ -57,21 +56,26 @@ export function useYouTubePlayer({
   const [ready, setReady] = useState(false);
   const [state, setState] = useState<PlayerState>("unstarted");
   const [volume, setVolumeState] = useState(80);
-  // Browser autoplay policy blocks programmatic playback with sound until the
-  // user has interacted with the player once. We track that here: until the
-  // first user-gesture play, `needsGesture` is true so the dashboard can show a
-  // one-time "Tap to enable audio" overlay. After that, auto-advance between
-  // songs can autoplay programmatically without issue.
   const [audioUnlocked, setAudioUnlocked] = useState(false);
 
-  // Keep the latest onEnded in a ref so the YT event handler (bound once)
-  // always calls the current callback.
   const onEndedRef = useRef(onEnded);
   useEffect(() => {
     onEndedRef.current = onEnded;
   }, [onEnded]);
 
-  // Initialize both players once.
+  // Prevent double-advance: YT often fires ENDED more than once, and may fire
+  // ENDED again while the next video is loading — that used to skip songs.
+  const videoIdRef = useRef<string | null>(videoId);
+  const endedForVideoRef = useRef<string | null>(null);
+  const ignoreEndedUntilRef = useRef(0);
+
+  useEffect(() => {
+    videoIdRef.current = videoId;
+    endedForVideoRef.current = null;
+    // Ignore ENDED for a moment after a track change (load transitions).
+    ignoreEndedUntilRef.current = Date.now() + 1500;
+  }, [videoId]);
+
   useEffect(() => {
     let cancelled = false;
     loadYouTubeAPI().then(() => {
@@ -82,8 +86,6 @@ export function useYouTubePlayer({
       mainPlayer.current = new YT.Player(mainRef.current, {
         height: "100%",
         width: "100%",
-        // autoplay:1 so a loaded video starts on its own once audio is unlocked;
-        // the first play still needs a user gesture (see unlock()).
         playerVars: { autoplay: 1, controls: 1, rel: 0, modestbranding: 1 },
         events: {
           onReady: () => {
@@ -92,7 +94,6 @@ export function useYouTubePlayer({
             onReady?.();
           },
           onStateChange: (e: { data: number }) => {
-            // 0 = ended, 1 = playing, 2 = paused, 3 = buffering, 5 = cued
             const map: Record<number, PlayerState> = {
               [-1]: "unstarted",
               0: "ended",
@@ -102,18 +103,20 @@ export function useYouTubePlayer({
               5: "cued",
             };
             setState(map[e.data] ?? "unstarted");
-            // Reaching "playing" means audio is flowing — mark unlocked so the
-            // overlay drops and future auto-advances autoplay silently.
             if (e.data === 1) setAudioUnlocked(true);
-            if (e.data === 0) onEndedRef.current();
+
+            if (e.data === 0) {
+              if (Date.now() < ignoreEndedUntilRef.current) return;
+              const vid = videoIdRef.current;
+              if (!vid) return;
+              if (endedForVideoRef.current === vid) return;
+              endedForVideoRef.current = vid;
+              onEndedRef.current();
+            }
           },
         },
       });
 
-      // Hidden preload player: we cueVideoById the next track so its data is
-      // buffered and the visible transition is near-instant. NOTE: this removes
-      // the LOAD gap only — it cannot skip YouTube ads (monetization-controlled,
-      // out of scope).
       preloadPlayer.current = new YT.Player(preloadRef.current, {
         height: "1",
         width: "1",
@@ -126,19 +129,31 @@ export function useYouTubePlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load the current video when it changes. loadVideoById starts playback; if
-  // audio isn't unlocked yet the browser may hold it silent/paused until the
-  // user taps "enable audio" (unlock()).
+  // Load + explicitly play so auto-advance works after a track ends.
   useEffect(() => {
     if (!ready || !mainPlayer.current) return;
     if (videoId) {
       mainPlayer.current.loadVideoById(videoId);
-    } else {
-      mainPlayer.current.stopVideo?.();
+      // loadVideoById alone often leaves the next track paused after ENDED.
+      const tryPlay = () => {
+        try {
+          mainPlayer.current?.playVideo?.();
+        } catch {
+          /* ignore */
+        }
+      };
+      tryPlay();
+      // Retry shortly — YT sometimes ignores the first playVideo during load.
+      const t1 = window.setTimeout(tryPlay, 250);
+      const t2 = window.setTimeout(tryPlay, 800);
+      return () => {
+        window.clearTimeout(t1);
+        window.clearTimeout(t2);
+      };
     }
+    mainPlayer.current.stopVideo?.();
   }, [videoId, ready]);
 
-  // Cue the next video on the hidden preload player.
   useEffect(() => {
     if (!ready || !preloadPlayer.current) return;
     if (nextVideoId) {
@@ -161,14 +176,8 @@ export function useYouTubePlayer({
     }
   }, []);
 
-  // One-time user-gesture unlock. Called from the "Tap to enable audio" overlay
-  // at the start of the event: it plays within a genuine click handler, which
-  // satisfies the browser autoplay policy. onStateChange → "playing" then sets
-  // audioUnlocked and the overlay disappears.
   const unlock = useCallback(() => {
     mainPlayer.current?.playVideo?.();
-    // Optimistically mark unlocked so the overlay dismisses immediately even if
-    // there's nothing to play yet; real playback confirms it via onStateChange.
     setAudioUnlocked(true);
   }, []);
 
