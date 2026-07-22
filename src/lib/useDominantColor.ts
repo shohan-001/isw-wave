@@ -8,9 +8,9 @@ import { useEffect, useState } from "react";
 //
 // YouTube's i.ytimg.com serves thumbnails with permissive CORS, so a canvas
 // draw stays untainted and getImageData works. If a particular host ever taints
-// the canvas we swallow the error and fall back to the brand magenta.
+// the canvas we swallow the error and fall back to cinematic cyan.
 
-const FALLBACK: [number, number, number] = [224, 51, 143]; // wave magenta
+const FALLBACK: [number, number, number] = [34, 211, 238]; // pulse cyan
 
 export function useDominantColor(src: string | null): [number, number, number] {
   const [color, setColor] = useState<[number, number, number]>(FALLBACK);
