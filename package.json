@@ -10,7 +10,8 @@
     "postinstall": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force",
-    "db:deploy": "prisma migrate deploy"
+    "db:deploy": "prisma migrate deploy",
+    "db:turso": "tsx scripts/turso-migrate.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
