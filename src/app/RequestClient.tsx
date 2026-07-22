@@ -83,7 +83,8 @@ export function RequestClient({
   }, [loadMine, loadCrowd]);
 
   useEffect(() => {
-    const ms = isClientRealtimeConfigured() ? 15000 : 4000;
+    // Pusher carries live votes; keep a slow safety poll only.
+    const ms = isClientRealtimeConfigured() ? 20000 : 8000;
     const t = setInterval(() => {
       void loadMine();
       void loadCrowd();
@@ -91,29 +92,36 @@ export function RequestClient({
     return () => clearInterval(t);
   }, [loadMine, loadCrowd]);
 
+  const crowdDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshLists = useCallback(() => {
+    if (crowdDebounce.current) clearTimeout(crowdDebounce.current);
+    crowdDebounce.current = setTimeout(() => {
+      void loadMine();
+      void loadCrowd();
+    }, 200);
+  }, [loadMine, loadCrowd]);
+
   useEventRealtime(user.eventId, {
-    "requests:update": () => {
-      void loadMine();
-      void loadCrowd();
-    },
+    "requests:update": refreshLists,
     "pending:update": () => void loadCrowd(),
-    "queue:update": () => {
-      void loadCrowd();
-      void loadMine();
-    },
+    "queue:update": refreshLists,
   });
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchAbort = useRef<AbortController | null>(null);
 
   const runSearch = useCallback(async (q: string) => {
     const term = q.trim();
     if (term.length < 2) return;
+    searchAbort.current?.abort();
+    const ac = new AbortController();
+    searchAbort.current = ac;
     setPhase("searching");
     setSearchError(null);
     setResults([]);
     try {
       const res = await fetch(`/api/search?q=${encodeURIComponent(term)}`, {
         cache: "no-store",
+        signal: ac.signal,
       });
       const data = await res.json();
       if (!res.ok) {
@@ -123,7 +131,8 @@ export function RequestClient({
       }
       setResults(data.results as SearchResult[]);
       setPhase("results");
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setSearchError("Network error. Try again.");
       setPhase("results");
     }
@@ -131,8 +140,7 @@ export function RequestClient({
 
   const onSubmitSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => runSearch(query), 500);
+    void runSearch(query);
   };
 
   const atLimit = limit > 0 && used >= limit;
@@ -194,6 +202,21 @@ export function RequestClient({
   }
 
   async function toggleVote(requestId: string) {
+    const current = crowd.find((r) => r.id === requestId);
+    if (!current || voteBusy) return;
+
+    const was = Boolean(current.iVoted);
+    const optimisticCount = Math.max(0, current.voteCount + (was ? -1 : 1));
+    // Instant UI — don't wait for the round-trip.
+    setCrowd((list) =>
+      list
+        .map((r) =>
+          r.id === requestId
+            ? { ...r, voteCount: optimisticCount, iVoted: !was }
+            : r
+        )
+        .sort((a, b) => b.voteCount - a.voteCount)
+    );
     setVoteBusy(requestId);
     try {
       const res = await fetch("/api/votes", {
@@ -215,7 +238,27 @@ export function RequestClient({
             )
             .sort((a, b) => b.voteCount - a.voteCount)
         );
+      } else {
+        setCrowd((list) =>
+          list
+            .map((r) =>
+              r.id === requestId
+                ? { ...r, voteCount: current.voteCount, iVoted: was }
+                : r
+            )
+            .sort((a, b) => b.voteCount - a.voteCount)
+        );
       }
+    } catch {
+      setCrowd((list) =>
+        list
+          .map((r) =>
+            r.id === requestId
+              ? { ...r, voteCount: current.voteCount, iVoted: was }
+              : r
+          )
+          .sort((a, b) => b.voteCount - a.voteCount)
+      );
     } finally {
       setVoteBusy(null);
     }
