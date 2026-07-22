@@ -16,7 +16,7 @@ function artSrc(t: CarouselTrack): string {
     : t.thumbnailUrl;
 }
 
-/** Full 16:9 now-playing frame — entire YouTube thumb visible, aligned for projector. */
+/** Full 16:9 now-playing frame — entire YouTube thumb visible. */
 export function AlbumCarousel({
   now,
   accent,
@@ -33,7 +33,7 @@ export function AlbumCarousel({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
       transition={{ type: "spring", stiffness: 140, damping: 20 }}
-      className="relative aspect-video w-full overflow-hidden rounded-2xl sm:rounded-3xl"
+      className="relative h-full w-full overflow-hidden rounded-2xl sm:rounded-3xl"
       style={{
         boxShadow: `0 0 40px -12px ${rgb(accent, 0.35)}, 0 24px 48px -20px rgba(0,0,0,0.7)`,
       }}
