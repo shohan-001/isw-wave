@@ -27,7 +27,7 @@ async function main() {
   const email = (process.env.ADMIN_EMAIL || "admin@iswwave.local")
     .trim()
     .toLowerCase();
-  const username = process.env.ADMIN_USERNAME || "admin";
+  const username = (process.env.ADMIN_USERNAME || "admin").trim().toLowerCase();
   const password = process.env.ADMIN_PASSWORD || "changeme";
 
   const passwordHash = await bcrypt.hash(password, 10);
@@ -38,6 +38,9 @@ async function main() {
   });
   console.log(
     `Seeded admin user "${admin.username}" <${admin.email}> (isAdmin=true).`
+  );
+  console.log(
+    `  → Log in with username "${username}" (or email) and the ADMIN_PASSWORD you just set.`
   );
   if (password === "changeme") {
     console.warn(

@@ -29,19 +29,24 @@ export async function POST(req: Request) {
       );
     }
 
-    const user = await prisma.user.findFirst({
-      where: {
-        isAdmin: true,
-        OR: [{ email: identifier }, { username: identifier }],
-      },
-    });
+    // SQLite comparisons are case-sensitive; match username/email in JS.
+    const admins = await prisma.user.findMany({ where: { isAdmin: true } });
+    const user =
+      admins.find(
+        (u) =>
+          u.email.toLowerCase() === identifier ||
+          u.username.toLowerCase() === identifier
+      ) ?? null;
 
     const DUMMY =
       "$2a$10$CwTycUXWue0Thq9StjUM0uJ8kf3Yl6i7iVb5mYb6QYp3lqJr5v9K";
     const ok = await verifyPassword(password, user?.passwordHash ?? DUMMY);
     if (!user || !ok) {
       return NextResponse.json(
-        { error: "Incorrect username/email or password." },
+        {
+          error:
+            "Incorrect username/email or password. Re-seed Turso with ADMIN_PASSWORD if you forgot it.",
+        },
         { status: 401 }
       );
     }
@@ -55,7 +60,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           error:
-            "No event is linked to this admin. Run npm run db:seed on the production database.",
+            "No event is linked to this admin. Re-run: TURSO_… npm run db:seed",
         },
         { status: 500 }
       );
