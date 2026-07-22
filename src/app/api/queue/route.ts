@@ -96,6 +96,13 @@ export async function GET(req: Request) {
     displayMode: event.displayMode === "minimal" ? "minimal" : "full",
     nowPlaying,
     nowPlayingIsFallback,
+    playback: {
+      positionSec: event.playbackPositionSec ?? 0,
+      playing: Boolean(event.playbackPlaying),
+      updatedAt: event.playbackUpdatedAt
+        ? event.playbackUpdatedAt.toISOString()
+        : null,
+    },
     queue: queue.map((r) => toPublicRequest(r)),
   };
   return NextResponse.json(payload);

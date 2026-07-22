@@ -152,6 +152,14 @@ export function useYouTubePlayer({
     setVolumeState(v);
     mainPlayer.current?.setVolume?.(v);
   }, []);
+  const getCurrentTime = useCallback((): number => {
+    try {
+      const t = mainPlayer.current?.getCurrentTime?.();
+      return typeof t === "number" && Number.isFinite(t) ? t : 0;
+    } catch {
+      return 0;
+    }
+  }, []);
 
   // One-time user-gesture unlock. Called from the "Tap to enable audio" overlay
   // at the start of the event: it plays within a genuine click handler, which
@@ -174,6 +182,7 @@ export function useYouTubePlayer({
     play,
     pause,
     setVolume,
+    getCurrentTime,
     unlock,
   };
 }
