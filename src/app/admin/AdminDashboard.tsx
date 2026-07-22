@@ -151,6 +151,26 @@ export function AdminDashboard({
     ? fallback[fallbackIndex % fallback.length]
     : null;
 
+  // Keep the hall display in sync when admin is looping fallback audio.
+  useEffect(() => {
+    if (usingFallback && fallbackTrack) {
+      void fetch("/api/playback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fallbackId: fallbackTrack.id }),
+      });
+      return;
+    }
+    // Live request owns the stage — clear any leftover fallback pointer.
+    if (now) {
+      void fetch("/api/playback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fallbackId: null }),
+      });
+    }
+  }, [usingFallback, fallbackTrack, now]);
+
   const activeVideoId =
     now?.youtubeVideoId ?? fallbackTrack?.youtubeVideoId ?? null;
   const nextVideoId = now

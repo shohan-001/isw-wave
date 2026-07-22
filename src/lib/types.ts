@@ -44,6 +44,8 @@ export type QueuePayload = {
   logoUrl: string;
   displayMode: "minimal" | "full";
   nowPlaying: PublicRequest | null;
+  /** True when nowPlaying is a fallback playlist track (not a live request). */
+  nowPlayingIsFallback: boolean;
   queue: PublicRequest[];
 };
 

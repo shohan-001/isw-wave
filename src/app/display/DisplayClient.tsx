@@ -113,7 +113,7 @@ export function DisplayClient({
                   <div className="mb-3 flex items-center justify-center gap-2 text-wave-400 sm:mb-4 sm:justify-start">
                     <EqualizerBars className="h-5 sm:h-6" />
                     <span className="font-display text-sm font-semibold uppercase tracking-[0.28em] sm:text-base">
-                      Now Playing
+                      {data?.nowPlayingIsFallback ? "Fallback" : "Now Playing"}
                     </span>
                   </div>
 
@@ -192,7 +192,9 @@ export function DisplayClient({
                     </p>
                     <p className="mt-1 truncate text-sm text-white/50 sm:text-base">
                       {now.channelName}
-                      {now.requesterName ? (
+                      {data?.nowPlayingIsFallback ? (
+                        <span className="text-white/35"> · fallback playlist</span>
+                      ) : now.requesterName ? (
                         <span className="text-white/35">
                           {" "}
                           · requested by {now.requesterName}

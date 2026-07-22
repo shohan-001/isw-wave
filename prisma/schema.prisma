@@ -54,6 +54,8 @@ model Event {
   displayMode String @default("full")
 
   currentRequestId String? @unique
+  // When the queue is empty, admin may loop FallbackTrack — mirror that on display.
+  currentFallbackId String @default("")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

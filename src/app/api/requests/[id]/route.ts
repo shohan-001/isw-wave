@@ -113,7 +113,7 @@ export async function PATCH(
       }
       await prisma.event.update({
         where: { id: eventId },
-        data: { currentRequestId: id },
+        data: { currentRequestId: id, currentFallbackId: "" },
       });
       response = NextResponse.json({ ok: true });
       break;

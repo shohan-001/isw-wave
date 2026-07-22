@@ -137,6 +137,7 @@ async function applyFinalSchema(client: Client) {
       "logoUrl" TEXT NOT NULL DEFAULT '',
       "displayMode" TEXT NOT NULL DEFAULT 'full',
       "currentRequestId" TEXT,
+      "currentFallbackId" TEXT NOT NULL DEFAULT '',
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL,
       CONSTRAINT "Event_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,

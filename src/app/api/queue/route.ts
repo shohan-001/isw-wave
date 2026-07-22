@@ -7,12 +7,36 @@ import {
   toPublicRequest,
 } from "@/lib/queries";
 import { getCurrentUser, normalizeAccessCode } from "@/lib/auth";
-import type { QueuePayload } from "@/lib/types";
+import type { QueuePayload, PublicRequest } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
- // GET /api/queue?code=XXXX | ?eventId=...
- // Public. Resolves the event from query params, or from the current session.
+function fallbackAsNowPlaying(track: {
+  id: string;
+  youtubeVideoId: string;
+  title: string;
+  thumbnailUrl: string;
+  durationSeconds: number;
+  channelName: string;
+}): PublicRequest {
+  return {
+    id: track.id,
+    youtubeVideoId: track.youtubeVideoId,
+    title: track.title,
+    thumbnailUrl: track.thumbnailUrl,
+    durationSeconds: track.durationSeconds,
+    channelName: track.channelName,
+    requesterName: "Fallback",
+    status: "approved",
+    queuePosition: null,
+    createdAt: new Date().toISOString(),
+    voteCount: 0,
+    flagged: false,
+    flagReason: "",
+  };
+}
+
+// GET /api/queue?code=XXXX | ?eventId=...
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const codeParam = searchParams.get("code");
@@ -36,9 +60,23 @@ export async function GET(req: Request) {
     );
   }
 
-  const nowPlaying = event.currentRequestId
-    ? await prisma.request.findUnique({ where: { id: event.currentRequestId } })
-    : null;
+  let nowPlaying: PublicRequest | null = null;
+  let nowPlayingIsFallback = false;
+
+  if (event.currentRequestId) {
+    const row = await prisma.request.findUnique({
+      where: { id: event.currentRequestId },
+    });
+    if (row) nowPlaying = toPublicRequest(row);
+  } else if (event.currentFallbackId) {
+    const track = await prisma.fallbackTrack.findUnique({
+      where: { id: event.currentFallbackId },
+    });
+    if (track && track.eventId === event.id) {
+      nowPlaying = fallbackAsNowPlaying(track);
+      nowPlayingIsFallback = true;
+    }
+  }
 
   const queue = await prisma.request.findMany({
     where: {
@@ -56,7 +94,8 @@ export async function GET(req: Request) {
     accentColor: event.accentColor || "#e0338f",
     logoUrl: event.logoUrl || "",
     displayMode: event.displayMode === "minimal" ? "minimal" : "full",
-    nowPlaying: nowPlaying ? toPublicRequest(nowPlaying) : null,
+    nowPlaying,
+    nowPlayingIsFallback,
     queue: queue.map((r) => toPublicRequest(r)),
   };
   return NextResponse.json(payload);
