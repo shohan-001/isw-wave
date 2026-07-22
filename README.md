@@ -85,6 +85,12 @@ the browser.
 - **Multi-tenancy:** everything is keyed by `eventId`, but Phase 1 uses one
   fixed event (`src/lib/constants.ts` → `EVENT_ID`).
 
+### Showcase / portfolio site
+
+Marketing landing lives in [`showcase/`](./showcase) — deploy as a **separate
+Vercel project** (Root Directory = `showcase`) and attach a Cloudflare
+subdomain. See [`showcase/README.md`](./showcase/README.md).
+
 ### API routes
 
 | Method + Route | Purpose |

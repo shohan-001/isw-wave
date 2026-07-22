@@ -12,7 +12,9 @@
     "db:reset": "prisma migrate reset --force",
     "db:deploy": "prisma migrate deploy",
     "db:turso": "tsx scripts/turso-migrate.ts",
-    "db:migrate-phase5": "tsx scripts/migrate-phase5-data.ts"
+    "db:migrate-phase5": "tsx scripts/migrate-phase5-data.ts",
+    "showcase:dev": "npm run dev --prefix showcase",
+    "showcase:build": "npm run build --prefix showcase"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

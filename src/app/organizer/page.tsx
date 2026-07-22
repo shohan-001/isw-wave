@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { BrandMark } from "@/components/BrandMark";
 import { OrganizerEventsList } from "@/components/OrganizerEventsList";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +11,9 @@ export default async function OrganizerPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col px-4 py-10">
+      <div className="mb-8">
+        <BrandMark size={36} />
+      </div>
       <h1 className="font-display mb-2 text-3xl font-bold text-white">
         Your events
       </h1>

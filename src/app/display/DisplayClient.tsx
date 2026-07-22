@@ -5,16 +5,12 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useQueuePolling } from "@/lib/useQueuePolling";
 import { formatDuration } from "@/lib/types";
 import { QRCodeBlock } from "@/components/QRCodeBlock";
-import { EqualizerBars } from "@/components/EqualizerBars"; // EqualizerBars.tsx
+import { EqualizerBars } from "@/components/EqualizerBars";
 import { WaveBackground } from "@/components/WaveBackground";
 import { EventTheme } from "@/components/EventTheme";
 import { useDominantColor, rgb } from "@/lib/useDominantColor";
 
-// Big, high-contrast projector screen. Viewed from across a room, so type is
-// large and the now-playing hero dominates. Silent by design — no audio, no
-// player embed here (the admin device owns venue audio). Because there is no
-// audio stream on this device, the "beat" pulse and elapsed timeline are
-// simulated locally (real playback position is a Phase 3 WebSocket concern).
+// Projector + phone display — silent, high-contrast, responsive.
 export function DisplayClient({
   requestUrl,
   accessCode,
@@ -43,7 +39,6 @@ export function DisplayClient({
     (data?.displayMode ?? initialDisplayMode) === "minimal" ? "minimal" : "full";
   const isMinimal = displayMode === "minimal";
 
-  // Tint the whole scene (glow + waves) with the current artwork's color.
   const accent = useDominantColor(
     now ? hiRes(now.youtubeVideoId, now.thumbnailUrl) : null
   );
@@ -54,321 +49,306 @@ export function DisplayClient({
     ? Math.min(1, elapsed / now.durationSeconds)
     : 0;
 
+  const code = data?.accessCode ?? accessCode;
+  const name = data?.eventName ?? eventName;
+
   return (
-    <EventTheme accentColor={themeAccent} className="relative min-h-screen w-full overflow-hidden bg-ink">
-      {/* Ambient color-adaptive glow. */}
+    <EventTheme
+      accentColor={themeAccent}
+      className="relative min-h-[100dvh] w-full overflow-x-hidden bg-ink"
+    >
       <div
         className="pointer-events-none absolute inset-0 transition-colors duration-1000"
         style={{
-          background: `radial-gradient(65% 55% at 42% 45%, ${rgb(accent, 0.4)} 0%, transparent 72%)`,
+          background: `radial-gradient(70% 55% at 40% 40%, ${rgb(accent, 0.38)} 0%, transparent 70%)`,
         }}
       />
-      {/* Glowing wave band behind the cards. */}
       <WaveBackground color={rgb(accent, 1)} pulse={pulse} />
-      <div className="absolute inset-0 bg-ink/45" />
+      <div className="absolute inset-0 bg-ink/50" />
 
-      {/* Header */}
-      <div className="relative z-10 flex items-center gap-3 px-10 pt-8">
-        {themeLogo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={themeLogo}
-            alt=""
-            className="h-10 max-h-[40px] w-auto object-contain"
-          />
-        ) : null}
-        <span className="font-display text-xl font-medium uppercase tracking-[0.25em] text-wave-400">
-          ISW Wave
-        </span>
-        <span className="text-white/30">·</span>
-        <span className="text-xl text-white/50">
-          {data?.eventName ?? eventName}
-        </span>
-      </div>
-
-      {/* QR + event code — top right (hero of the join flow) */}
-      <div className="absolute right-10 top-8 z-20 flex flex-col items-end gap-4">
-        <QRCodeBlock url={requestUrl} />
-        <div className="rounded-2xl border border-white/15 bg-ink/70 px-5 py-3 text-center backdrop-blur-md">
-          <p className="font-display text-xs font-medium uppercase tracking-[0.25em] text-white/45">
-            Event code
-          </p>
-          <p className="mt-1 font-display text-3xl font-bold tracking-[0.2em] text-white">
-            {data?.accessCode ?? accessCode}
-          </p>
-        </div>
-      </div>
-
-      {/* CENTER STAGE: fanned card stack (full) or single hero (minimal).
-          Bottom padding leaves room for the collapsed sheet in full mode. */}
-      <div
-        className={`relative z-10 flex min-h-screen flex-col items-center justify-center px-8 pt-4 ${
-          isMinimal ? "pb-16" : "pb-52"
-        }`}
-      >
-        <AnimatePresence mode="wait">
+      <div className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-[1600px] flex-col px-4 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-5 lg:px-8 lg:pb-6 lg:pt-6">
+        {/* Header — always aligned */}
+        <header className="flex shrink-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.05] px-3 py-2.5 backdrop-blur-xl sm:gap-4 sm:px-5 sm:py-3">
+          {themeLogo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={themeLogo}
+              alt=""
+              className="h-8 w-auto max-h-8 object-contain sm:h-9"
+            />
+          ) : (
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-wave/20 text-wave-400 sm:h-9 sm:w-9">
+              <EqualizerBars className="h-4" />
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-display text-[10px] font-semibold uppercase tracking-[0.22em] text-wave-400 sm:text-xs">
+              ISW Wave
+            </p>
+            <p className="truncate text-sm text-white/70 sm:text-base">{name}</p>
+          </div>
           {now ? (
-            <motion.div
-              key="stage"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex w-full flex-col items-center"
-            >
-              <div className="mb-6 flex items-center gap-3 text-wave-400">
-                <EqualizerBars className="h-7" />
-                <span className="font-display text-2xl font-semibold uppercase tracking-[0.3em]">
-                  Now Playing
-                </span>
-              </div>
+            <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-wave-400 sm:flex">
+              <EqualizerBars className="h-4" />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.18em]">
+                Live
+              </span>
+            </div>
+          ) : null}
+        </header>
 
-              {/* Card stack: queued tracks fan out behind the big hero card. */}
-              <div className="relative flex h-[clamp(360px,56vh,720px)] w-full max-w-5xl items-center justify-center">
-                {!isMinimal && (
-                  <AnimatePresence initial={false}>
-                    {queue.slice(0, 3).map((r, i) => {
-                      const depth = i + 1;
-                      const dir = depth % 2 === 0 ? -1 : 1;
-                      return (
-                        <motion.div
-                          key={r.id}
-                          layout
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{
-                            opacity: 0.5 - depth * 0.11,
-                            scale: 1 - depth * 0.08,
-                            x: dir * depth * 130,
-                            y: depth * 30,
-                            rotate: dir * depth * 3.5,
-                          }}
-                          exit={{ opacity: 0, scale: 0.8 }}
-                          transition={{ type: "spring", damping: 24, stiffness: 180 }}
-                          style={{ zIndex: 10 - depth }}
-                          className="absolute aspect-video w-[74%] overflow-hidden rounded-3xl border border-white/10 shadow-glow-lg"
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={hiRes(r.youtubeVideoId, r.thumbnailUrl)}
-                            alt=""
-                            className="h-full w-full object-cover"
-                          />
-                          <div className="absolute inset-0 bg-ink/45" />
-                        </motion.div>
-                      );
-                    })}
-                  </AnimatePresence>
-                )}
-
-                {/* Hero card — big, front and center, pulsing glow on the beat. */}
+        {/* Main stage — stacked on mobile, side-by-side on large screens */}
+        <div className="mt-4 grid min-h-0 flex-1 gap-4 lg:mt-5 lg:grid-cols-[minmax(0,1fr)_minmax(260px,320px)] lg:gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+          {/* Now playing column */}
+          <section className="flex min-h-0 flex-col">
+            <AnimatePresence mode="wait">
+              {now ? (
                 <motion.div
                   key={now.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.94 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ type: "spring", damping: 26, stiffness: 220 }}
-                  style={{
-                    zIndex: 20,
-                    boxShadow: `0 0 ${70 + pulse * 70}px ${pulse * 6}px ${rgb(accent, 0.65)}`,
-                  }}
-                  className={`relative aspect-video overflow-hidden rounded-[2rem] border border-white/15 ${
-                    isMinimal ? "w-[92%] max-w-6xl" : "w-[86%]"
-                  }`}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={hiRes(now.youtubeVideoId, now.thumbnailUrl)}
-                    alt={now.title}
-                    className="h-full w-full object-cover"
-                  />
-
-                  {/* Timeline bar across the bottom of the hero card. */}
-                  <div className="absolute inset-x-0 bottom-0 flex items-center gap-3 bg-gradient-to-t from-ink/90 to-transparent px-6 pb-4 pt-10">
-                    <span className="font-display text-sm font-semibold tabular-nums text-white/80">
-                      {formatDuration(Math.floor(elapsed))}
-                    </span>
-                    <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-white/20">
-                      <motion.div
-                        className="absolute inset-y-0 left-0 rounded-full"
-                        style={{ backgroundColor: rgb(accent, 1) }}
-                        animate={{ width: `${progress * 100}%` }}
-                        transition={{ ease: "linear", duration: 0.5 }}
-                      />
-                    </div>
-                    <span className="font-display text-sm font-semibold tabular-nums text-white/80">
-                      {formatDuration(now.durationSeconds)}
-                    </span>
-                  </div>
-                </motion.div>
-              </div>
-
-              {/* Minimal mode has no bottom sheet — surface title under the hero. */}
-              {isMinimal && (
-                <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="mt-8 max-w-4xl px-4 text-center"
+                  exit={{ opacity: 0 }}
+                  className="flex h-full flex-col"
                 >
-                  <p className="font-display text-3xl font-bold text-white xl:text-4xl">
-                    {now.title}
+                  <div className="mb-3 flex items-center justify-center gap-2 text-wave-400 sm:mb-4 sm:justify-start">
+                    <EqualizerBars className="h-5 sm:h-6" />
+                    <span className="font-display text-sm font-semibold uppercase tracking-[0.28em] sm:text-base">
+                      Now Playing
+                    </span>
+                  </div>
+
+                  <div className="relative mx-auto w-full max-w-4xl flex-1 lg:mx-0">
+                    {/* Fan cards — desktop only, keep stage clean on phones */}
+                    {!isMinimal && (
+                      <div className="pointer-events-none absolute inset-0 hidden items-center justify-center lg:flex">
+                        <AnimatePresence initial={false}>
+                          {queue.slice(0, 2).map((r, i) => {
+                            const depth = i + 1;
+                            const dir = depth % 2 === 0 ? -1 : 1;
+                            return (
+                              <motion.div
+                                key={r.id}
+                                initial={{ opacity: 0 }}
+                                animate={{
+                                  opacity: 0.35 - depth * 0.08,
+                                  scale: 0.92 - depth * 0.04,
+                                  x: dir * depth * 90,
+                                  y: depth * 18,
+                                  rotate: dir * depth * 2.5,
+                                }}
+                                className="absolute aspect-video w-[78%] overflow-hidden rounded-2xl border border-white/10"
+                                style={{ zIndex: 5 - depth }}
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={hiRes(r.youtubeVideoId, r.thumbnailUrl)}
+                                  alt=""
+                                  className="h-full w-full object-cover"
+                                />
+                                <div className="absolute inset-0 bg-ink/50" />
+                              </motion.div>
+                            );
+                          })}
+                        </AnimatePresence>
+                      </div>
+                    )}
+
+                    <motion.div
+                      style={{
+                        zIndex: 10,
+                        boxShadow: `0 0 ${40 + pulse * 50}px ${pulse * 4}px ${rgb(accent, 0.55)}`,
+                      }}
+                      className="relative aspect-video overflow-hidden rounded-2xl border border-white/15 sm:rounded-3xl"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={hiRes(now.youtubeVideoId, now.thumbnailUrl)}
+                        alt={now.title}
+                        className="h-full w-full object-cover"
+                      />
+                      <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-ink/95 via-ink/50 to-transparent px-3 pb-3 pt-10 sm:gap-3 sm:px-5 sm:pb-4">
+                        <span className="font-display text-xs font-semibold tabular-nums text-white/85 sm:text-sm">
+                          {formatDuration(Math.floor(elapsed))}
+                        </span>
+                        <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-white/20">
+                          <motion.div
+                            className="absolute inset-y-0 left-0 rounded-full"
+                            style={{ backgroundColor: rgb(accent, 1) }}
+                            animate={{ width: `${progress * 100}%` }}
+                            transition={{ ease: "linear", duration: 0.5 }}
+                          />
+                        </div>
+                        <span className="font-display text-xs font-semibold tabular-nums text-white/85 sm:text-sm">
+                          {formatDuration(now.durationSeconds)}
+                        </span>
+                      </div>
+                    </motion.div>
+                  </div>
+
+                  {/* Title under hero — always readable on mobile */}
+                  <div className="mt-4 text-center lg:text-left">
+                    <p className="line-clamp-2 font-display text-xl font-bold text-white sm:text-2xl lg:text-3xl">
+                      {now.title}
+                    </p>
+                    <p className="mt-1 truncate text-sm text-white/50 sm:text-base">
+                      {now.channelName}
+                      {now.requesterName ? (
+                        <span className="text-white/35">
+                          {" "}
+                          · requested by {now.requesterName}
+                        </span>
+                      ) : null}
+                    </p>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="empty"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/[0.03] px-6 py-16 text-center backdrop-blur-sm sm:rounded-3xl"
+                >
+                  <EqualizerBars className="mb-4 h-8 text-wave-400" />
+                  <h1 className="font-display text-3xl font-bold text-white sm:text-4xl lg:text-5xl">
+                    Nothing playing yet
+                  </h1>
+                  <p className="mt-3 max-w-md text-base text-white/50 sm:text-lg">
+                    Scan the QR code and request the first song of the night.
                   </p>
-                  <p className="mt-2 text-xl text-white/55">{now.channelName}</p>
                 </motion.div>
               )}
-            </motion.div>
-          ) : (
-            <motion.div
-              key="empty"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="max-w-xl text-center"
-            >
-              <h1 className="font-display text-5xl font-bold text-white xl:text-6xl">
-                Nothing playing yet
-              </h1>
-              <p className="mt-4 text-2xl text-white/50">
-                Scan the code and request the first song of the night.
+            </AnimatePresence>
+          </section>
+
+          {/* Join panel — QR + code */}
+          <aside className="flex shrink-0 flex-col gap-3 lg:gap-4">
+            <div className="rounded-2xl border border-white/12 bg-white/[0.07] p-4 backdrop-blur-2xl sm:p-5 lg:flex-1 lg:rounded-3xl">
+              <p className="text-center font-display text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45 sm:text-xs">
+                Scan to request
               </p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* BOTTOM SHEET: glass bar with the song name; click handle or drag up for
-          full details + queue. Hidden in minimal display mode. */}
-      {!isMinimal && now && (
-        <motion.div
-          drag="y"
-          dragConstraints={{ top: 0, bottom: 0 }}
-          dragElastic={0.15}
-          onDragEnd={(_, info) => {
-            if (info.offset.y < -40) setSheetOpen(true);
-            else if (info.offset.y > 40) setSheetOpen(false);
-          }}
-          animate={{ height: sheetOpen ? "clamp(360px, 56vh, 680px)" : 140 }}
-          transition={{ type: "spring", damping: 30, stiffness: 260 }}
-          className="absolute inset-x-0 bottom-0 z-30 cursor-grab overflow-hidden rounded-t-[2rem] border-t border-white/15 bg-white/[0.07] backdrop-blur-2xl active:cursor-grabbing"
-          style={{ boxShadow: `0 -20px 90px -30px ${rgb(accent, 0.85)}` }}
-        >
-          {/* Grab handle — click toggles too. */}
-          <button
-            onClick={() => setSheetOpen((v) => !v)}
-            className="mx-auto mt-3 flex h-6 w-full max-w-[200px] items-center justify-center"
-            aria-label="Toggle details"
-          >
-            <span className="h-1.5 w-16 rounded-full bg-white/40" />
-          </button>
-
-          {/* Collapsed bar — always visible */}
-          <div className="flex items-center gap-4 px-10 pb-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={hiRes(now.youtubeVideoId, now.thumbnailUrl)}
-              alt=""
-              className="h-16 w-28 shrink-0 rounded-xl object-cover"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="line-clamp-1 font-display text-2xl font-bold text-white">
-                {now.title}
-              </p>
-              <p className="truncate text-lg text-white/55">{now.channelName}</p>
+              <div className="mt-3 flex justify-center">
+                <QRCodeBlock url={requestUrl} compact />
+              </div>
+              <div className="mt-4 rounded-xl border border-white/12 bg-ink/60 px-3 py-3 text-center sm:rounded-2xl sm:px-4 sm:py-3.5">
+                <p className="font-display text-[10px] font-medium uppercase tracking-[0.22em] text-white/40">
+                  Event code
+                </p>
+                <p className="mt-1 font-display text-2xl font-bold tracking-[0.18em] text-white sm:text-3xl">
+                  {code}
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-4">
-              {!sheetOpen && (
-                <span className="hidden text-base text-white/40 sm:inline">
-                  Pull up for details
-                </span>
-              )}
-              <EqualizerBars className="h-7 text-wave-400" />
-            </div>
-          </div>
 
-          {/* Expanded details */}
-          <AnimatePresence>
-            {sheetOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 10 }}
-                className="px-10 pb-8"
-              >
-                <div className="flex flex-wrap items-center gap-3 border-b border-white/10 pb-6 pt-2 text-lg">
-                  <span
-                    className="rounded-full px-4 py-1.5 font-semibold text-white"
-                    style={{ backgroundColor: rgb(accent, 0.4) }}
-                  >
-                    {now.requesterName}
-                  </span>
-                  <span className="text-white/45">
-                    requested · {formatDuration(now.durationSeconds)}
+            {/* Up next preview — desktop sidebar / mobile list */}
+            {!isMinimal && (
+              <div className="rounded-2xl border border-white/12 bg-white/[0.05] p-4 backdrop-blur-xl lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-display text-xs font-semibold uppercase tracking-[0.2em] text-white/55">
+                    Up next
+                  </h2>
+                  <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/50">
+                    {queue.length}
                   </span>
                 </div>
-
-                <h3 className="mt-6 font-display text-lg font-semibold uppercase tracking-[0.2em] text-white/70">
-                  Up Next
-                  <span className="ml-2 text-white/30">{queue.length}</span>
-                </h3>
-                <ul className="no-scrollbar mt-4 flex max-h-[30vh] flex-col gap-3 overflow-y-auto">
-                  <AnimatePresence initial={false}>
-                    {queue.map((r, i) => (
-                      <motion.li
-                        key={r.id}
-                        layout
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        transition={{ type: "spring", damping: 28, stiffness: 260 }}
-                        className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3"
-                      >
-                        <span className="w-6 shrink-0 text-center font-display text-lg font-bold text-wave-400">
-                          {i + 1}
+                <ul className="mt-3 max-h-48 space-y-2 overflow-y-auto no-scrollbar lg:max-h-none lg:h-[calc(100%-2rem)]">
+                  {queue.slice(0, 6).map((r, i) => (
+                    <li
+                      key={r.id}
+                      className="flex items-center gap-2.5 rounded-xl border border-white/8 bg-white/[0.03] p-2"
+                    >
+                      <span className="w-5 shrink-0 text-center font-display text-sm font-bold text-wave-400">
+                        {i + 1}
+                      </span>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={r.thumbnailUrl}
+                        alt=""
+                        className="h-9 w-14 shrink-0 rounded-md object-cover"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="line-clamp-1 text-sm font-medium text-white">
+                          {r.title}
                         </span>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={r.thumbnailUrl}
-                          alt=""
-                          className="h-12 w-20 shrink-0 rounded-lg object-cover"
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="line-clamp-1 text-lg font-medium text-white">
-                            {r.title}
-                          </span>
-                          <span className="truncate text-sm text-white/45">
-                            {r.requesterName}
-                          </span>
+                        <span className="block truncate text-xs text-white/40">
+                          {r.requesterName}
                         </span>
-                      </motion.li>
-                    ))}
-                  </AnimatePresence>
+                      </span>
+                    </li>
+                  ))}
                   {queue.length === 0 && (
-                    <li className="py-6 text-center text-white/30">
-                      Queue is empty — request a song!
+                    <li className="py-6 text-center text-sm text-white/30">
+                      Queue is empty
                     </li>
                   )}
                 </ul>
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
-        </motion.div>
-      )}
+          </aside>
+        </div>
+
+        {/* Mobile pull-up for more queue (full mode only) — optional detail sheet */}
+        {!isMinimal && now && queue.length > 3 && (
+          <div className="mt-3 lg:hidden">
+            <button
+              type="button"
+              onClick={() => setSheetOpen((v) => !v)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] py-3 text-sm text-white/55 backdrop-blur-md"
+            >
+              <span className="h-1 w-10 rounded-full bg-white/35" />
+              <span>{sheetOpen ? "Hide full queue" : "Show full queue"}</span>
+            </button>
+            <AnimatePresence>
+              {sheetOpen && (
+                <motion.ul
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="mt-2 max-h-64 space-y-2 overflow-y-auto rounded-2xl border border-white/10 bg-white/[0.05] p-3 backdrop-blur-xl"
+                >
+                  {queue.map((r, i) => (
+                    <li
+                      key={r.id}
+                      className="flex items-center gap-3 rounded-xl bg-white/[0.04] p-2"
+                    >
+                      <span className="w-5 text-center font-display text-sm font-bold text-wave-400">
+                        {i + 1}
+                      </span>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={r.thumbnailUrl}
+                        alt=""
+                        className="h-10 w-16 rounded-md object-cover"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="line-clamp-1 text-sm text-white">
+                          {r.title}
+                        </span>
+                        <span className="text-xs text-white/40">
+                          {r.requesterName}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </motion.ul>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+      </div>
     </EventTheme>
   );
 }
 
-// A gentle simulated "beat": a value that swings 0..1 on a musical-ish tempo so
-// the glow/waves breathe. Not tied to real audio (this device is silent) — it's
-// a visual heartbeat at ~120bpm.
 function useSimulatedBeat(bpm = 120): number {
   const [pulse, setPulse] = useState(0);
   const raf = useRef<number>();
   const start = useRef<number | null>(null);
   useEffect(() => {
-    const period = 60000 / bpm; // ms per beat
+    const period = 60000 / bpm;
     const loop = (t: number) => {
       if (start.current === null) start.current = t;
-      const phase = ((t - start.current) % period) / period; // 0..1
-      // Sharp attack, soft decay — feels like a kick.
-      const env = Math.pow(1 - phase, 2.2);
-      setPulse(env);
+      const phase = ((t - start.current) % period) / period;
+      setPulse(Math.pow(1 - phase, 2.2));
       raf.current = requestAnimationFrame(loop);
     };
     raf.current = requestAnimationFrame(loop);
@@ -379,9 +359,6 @@ function useSimulatedBeat(bpm = 120): number {
   return pulse;
 }
 
-// Approximate elapsed seconds for the current song. Resets whenever the song id
-// changes. This is a local clock, not the admin player's true position — good
-// enough for a visual timeline until Phase 3 broadcasts real playback state.
 function useElapsed(songId: string | null): number {
   const [elapsed, setElapsed] = useState(0);
   const startRef = useRef<number | null>(null);
@@ -402,8 +379,6 @@ function useElapsed(songId: string | null): number {
   return elapsed;
 }
 
-// YouTube exposes a higher-res thumbnail at a predictable URL. Fall back to the
-// medium thumbnail we stored if the hqdefault isn't available.
 function hiRes(videoId: string, fallback: string): string {
   return videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : fallback;
 }

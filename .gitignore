@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+node_modules/
 /.pnp
 .pnp.js
 .yarn/install-state.gz
@@ -10,7 +10,7 @@
 /coverage
 
 # next.js
-/.next/
+.next/
 /out/
 
 # production
@@ -50,3 +50,6 @@ prisma/dev.db-journal
 .agents/
 .windsurf/
 skills-lock.json
+
+# Separate repo: github.com/shohan-001/isw-wave-showcase
+showcase/

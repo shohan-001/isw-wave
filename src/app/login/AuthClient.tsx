@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { BrandMark } from "@/components/BrandMark";
 import { DEVICE_ID_KEY } from "@/lib/constants";
 import type { AuthUser } from "@/lib/types";
 
@@ -151,24 +152,8 @@ export function AuthClient({
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-sm"
       >
-        <div className="mb-6 flex items-center gap-2">
-          <span className="inline-flex h-6 items-end gap-[3px] text-wave">
-            <span
-              className="w-[3px] rounded-full bg-current animate-eq-1"
-              style={{ height: "60%" }}
-            />
-            <span
-              className="w-[3px] rounded-full bg-current animate-eq-2"
-              style={{ height: "100%" }}
-            />
-            <span
-              className="w-[3px] rounded-full bg-current animate-eq-3"
-              style={{ height: "45%" }}
-            />
-          </span>
-          <span className="font-display text-sm font-medium uppercase tracking-[0.2em] text-wave-400">
-            ISW Wave
-          </span>
+        <div className="mb-6">
+          <BrandMark size={40} />
         </div>
 
         <div className="rounded-3xl border border-white/10 bg-surface/70 p-7 shadow-glow backdrop-blur">

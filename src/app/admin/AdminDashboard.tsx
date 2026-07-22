@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { BrandMark } from "@/components/BrandMark";
 import { EventTheme } from "@/components/EventTheme";
 import { useQueuePolling } from "@/lib/useQueuePolling";
 import { useYouTubePlayer } from "@/lib/useYouTubePlayer";
@@ -389,7 +390,9 @@ export function AdminDashboard({
                 alt=""
                 className="h-10 w-10 rounded-xl object-cover ring-1 ring-white/10"
               />
-            ) : null}
+            ) : (
+              <BrandMark size={40} showWordmark={false} />
+            )}
             <div>
               <h1 className="font-display text-2xl font-bold text-white">
                 Control Room
