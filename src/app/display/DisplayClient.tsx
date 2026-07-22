@@ -83,8 +83,8 @@ export function DisplayClient({
           ) : null}
         </header>
 
-        {/* Main row: 16:9 art + QR — same height, aligned */}
-        <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(200px,260px)] lg:items-stretch lg:gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(220px,280px)]">
+        {/* Main row: capped 16:9 art + QR — title lives below so it never clips */}
+        <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 content-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(200px,260px)] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(220px,280px)]">
           <section className="flex min-h-0 flex-col">
             <AnimatePresence mode="wait">
               {now ? (
@@ -93,7 +93,7 @@ export function DisplayClient({
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className="flex min-h-0 flex-1 flex-col"
+                  className="flex min-h-0 flex-col"
                 >
                   <div className="mb-1.5 flex items-center gap-2 text-pulse">
                     <EqualizerBars className="h-3.5" />
@@ -102,31 +102,11 @@ export function DisplayClient({
                     </span>
                   </div>
 
-                  <div className="relative min-h-0 flex-1">
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="aspect-video h-auto max-h-full w-full max-w-full">
-                        <AlbumCarousel now={now} accent={accent} />
-                      </div>
+                  {/* Cap height so progress + title stay on-screen */}
+                  <div className="flex w-full justify-center">
+                    <div className="aspect-video h-[min(36vh,400px)] w-auto max-w-full overflow-hidden rounded-2xl sm:h-[min(40vh,440px)] sm:rounded-3xl lg:h-[min(42vh,480px)]">
+                      <AlbumCarousel now={now} accent={accent} />
                     </div>
-                  </div>
-
-                  <div className="mt-2 shrink-0 sm:mt-3">
-                    <LinearProgress
-                      progress={progress}
-                      elapsed={elapsed}
-                      duration={now.durationSeconds}
-                    />
-                    <p className="mt-2 line-clamp-1 font-display text-xl font-bold tracking-tight text-white sm:text-2xl lg:text-3xl">
-                      {now.title}
-                    </p>
-                    <p className="mt-0.5 truncate text-xs text-white/40 sm:text-sm">
-                      {now.channelName}
-                      {data?.nowPlayingIsFallback
-                        ? " · fallback"
-                        : now.requesterName
-                        ? ` · requested by ${now.requesterName}`
-                        : ""}
-                    </p>
                   </div>
                 </motion.div>
               ) : (
@@ -134,7 +114,7 @@ export function DisplayClient({
                   key="empty"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="flex flex-1 items-center justify-center"
+                  className="flex flex-1 items-center justify-center py-8"
                 >
                   <GlassPanel className="max-w-md px-8 py-10 text-center">
                     <EqualizerBars className="mx-auto mb-4 h-7 text-pulse" />
@@ -150,8 +130,8 @@ export function DisplayClient({
             </AnimatePresence>
           </section>
 
-          <aside className="flex shrink-0 lg:h-full">
-            <GlassPanel className="flex w-full flex-col items-center justify-center p-3 sm:p-4 lg:p-5">
+          <aside className="flex shrink-0 self-start lg:self-stretch">
+            <GlassPanel className="flex w-full flex-col items-center justify-center p-3 sm:p-4 lg:max-h-[min(42vh,480px)] lg:p-5">
               <p className="font-display text-[10px] font-semibold uppercase tracking-[0.28em] text-white/40">
                 Scan to request
               </p>
@@ -169,6 +149,28 @@ export function DisplayClient({
             </GlassPanel>
           </aside>
         </div>
+
+        {/* Dedicated title band — always visible above Up Next */}
+        {now ? (
+          <div className="mt-3 shrink-0 sm:mt-4">
+            <LinearProgress
+              progress={progress}
+              elapsed={elapsed}
+              duration={now.durationSeconds}
+            />
+            <h1 className="mt-2.5 line-clamp-2 font-display text-2xl font-bold leading-tight tracking-tight text-white drop-shadow-sm sm:text-3xl lg:text-4xl">
+              {now.title}
+            </h1>
+            <p className="mt-1 truncate text-sm text-white/65 sm:text-base">
+              {now.channelName}
+              {data?.nowPlayingIsFallback
+                ? " · fallback"
+                : now.requesterName
+                ? ` · requested by ${now.requesterName}`
+                : ""}
+            </p>
+          </div>
+        ) : null}
 
         {!isMinimal && (
           <div className="mt-3 shrink-0">
