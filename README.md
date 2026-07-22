@@ -1,137 +1,153 @@
-# ISW Wave — Live Song Request System (Phase 1 MVP)
+# ISW Wave
 
-A live song-request wave for events. Attendees scan a QR code on the hall
-screen, search YouTube for a song, and submit a request. The event's tech lead
-approves requests from an admin dashboard; approved songs flow into a queue and
-play — with the admin device driving venue audio.
+Live song-request platform for campus events, hack nights, and parties.
 
-**Core loop:** search → request → approve → queue → now playing.
+Guests scan a QR code, search YouTube, request tracks, and upvote the queue. Organizers moderate in a control room and drive **venue audio** from the admin laptop. A hall **display** stays silent and shows now playing, up next, and the join QR.
 
-This is the Phase 1 single-event MVP. No user accounts; identity is a display
-name + session cookie. Admin is a single shared password.
+**Live app:** [isw-wave.isharaka.dev](https://isw-wave.isharaka.dev)  
+**Showcase:** [wave.isharaka.dev](https://wave.isharaka.dev) · repo [`isw-wave-showcase`](https://github.com/shohan-001/isw-wave-showcase)  
+**Author:** Isharaka Shohan
+
+> For AI / coding agents: read **[`AGENTS.md`](./AGENTS.md)** first. Update it after every major change.
 
 ---
 
-## Quick start
+## Core loop
+
+```
+Scan QR → search YouTube → request → (approve) → upvote queue → admin plays → display syncs → auto-advance
+```
+
+- **Admin device** = speakers / YouTube IFrame player (ToS-safe; display never plays audio).
+- Queue order is **vote-first**, then queue position.
+- When the live queue is empty, admin can loop a **fallback playlist** (also mirrored on the display).
+
+---
+
+## Stack
+
+| Layer | Choice |
+| --- | --- |
+| App | Next.js 14 (App Router) · TypeScript · Tailwind · Framer Motion |
+| DB | Prisma 6 + LibSQL (local SQLite file · production **Turso**) |
+| Realtime | Pusher Channels (optional; UI falls back to slow polling) |
+| Media | YouTube Data API v3 (search) · YouTube IFrame API (admin playback) |
+| Hosting | Vercel + custom domain `isw-wave.isharaka.dev` |
+
+---
+
+## Quick start (local)
 
 ```bash
 npm install
-cp .env.example .env      # then fill in the values below
-npx prisma migrate deploy # create the SQLite schema
-npm run db:seed           # create the single event row
-npm run dev               # http://localhost:3000
+cp .env.example .env   # fill required vars below
+npx prisma migrate deploy
+npm run db:seed
+npm run dev            # http://localhost:3000
 ```
 
-### Required environment variables (`.env`)
+### Required `.env`
 
-| Var | What it is |
+| Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | Local dev DB. Leave as `file:./dev.db` (→ `prisma/dev.db`). |
-| `YOUTUBE_API_KEY` | YouTube Data API v3 key. Search is disabled without it. |
-| `ADMIN_PASSWORD` | Password for the admin dashboard. Default in example is `changeme`. |
-| `SESSION_SECRET` | Long random string used to sign session/admin cookies. |
-| `NEXT_PUBLIC_BASE_URL` | Public URL encoded into the display-page QR code. |
-| `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | Production only — see Deployment. |
+| `DATABASE_URL` | Local file, e.g. `file:./prisma/dev.db` |
+| `YOUTUBE_API_KEY` | YouTube Data API v3 key (**server-only**) |
+| `ADMIN_PASSWORD` | Seeded organizer password |
+| `SESSION_SECRET` | Long random string for signed auth cookies |
+| `NEXT_PUBLIC_BASE_URL` | Public origin for QR links (`http://localhost:3000` locally) |
 
-**Get a YouTube API key:** [Google Cloud Console](https://console.cloud.google.com)
-→ create a project → enable **YouTube Data API v3** → create an API key → paste
-into `YOUTUBE_API_KEY`. The key is used **server-side only** and never reaches
-the browser.
+### Optional but recommended
+
+| Variable | Purpose |
+| --- | --- |
+| `PUSHER_*` / `NEXT_PUBLIC_PUSHER_*` | Live votes / queue updates without aggressive polling |
+| `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | Production DB (required on Vercel) |
+| `MIN_SONG_SECONDS` | Filter Shorts/teasers (default `60`) |
+
+**YouTube key tip:** enable *YouTube Data API v3* in Google Cloud. Do **not** lock the key to HTTP referrers — it is used from the server. Prefer IP / API restriction.
 
 ---
 
-## The three screens
+## Screens & roles
 
 | Route | Who | Purpose |
 | --- | --- | --- |
-| `/` | Attendees (phones) | Search a song, pick it, request with a name. Mobile-first. |
-| `/display` | Projector / second screen | Now Playing hero + upcoming queue + QR code. **Silent, informational only.** Polls every 5s. |
-| `/admin` | Tech lead (audio laptop) | Password-gated. Pending approvals, queue reorder, **the active YouTube player that produces venue audio**, and settings. |
+| `/login` | Guests + organizers | Join with access code, or admin login |
+| `/e/{slug}` | Guests | Search, request, upvote · **Display** button → hall view |
+| `/e/{slug}/display` | Projector / TV | Now playing, QR, up next (silent) |
+| `/display?code=` | Legacy display | Same UI; prefer slug URL |
+| `/admin` | Organizer laptop | Moderate, play audio, settings, fallback |
+| `/organizer` | Organizer | List / switch / create events |
 
-### Try the full loop locally
+### Local smoke test
 
-1. Open **`/`**, search a real song (needs `YOUTUBE_API_KEY`), tap a result, enter a name, request it.
-2. Open **`/admin`**, log in with `ADMIN_PASSWORD`, see the pending request, **Approve** it.
-3. Open **`/display`** — the song is in the queue; the admin player promotes it to Now Playing.
-4. In `/admin`, click **⏭ Next / Mark played** — the queue advances and Now Playing clears.
-
-> The admin player is the one wired to speakers. Run `/admin` on the laptop
-> connected to the hall audio, and `/display` on the projector. This is a hard
-> requirement (and keeps the visible player YouTube-ToS compliant).
+1. Log in as admin (`/login`) → open `/admin` with speakers.
+2. Open `/e/{slug}/display` on another tab (projector).
+3. On a phone (or another tab), open `/e/{slug}`, join with a name, search + request.
+4. Approve in admin → upvote from guest → confirm queue order and display.
+5. Let a track end (or hit Next) — next highest-voted song should start without replay glitches.
 
 ---
 
-## Architecture notes
+## Features (current)
 
-- **Next.js 14 App Router + TypeScript + Tailwind + Framer Motion.**
-- **Database: Prisma + LibSQL driver adapter.** Local dev uses a plain SQLite
-  file (`prisma/dev.db`); production points at a hosted Turso/LibSQL instance.
-  Same schema, same queries — swapping to Postgres later is a provider change,
-  not a rewrite. Path handling for the local file lives in `src/lib/db-config.ts`.
-- **YouTube search** (`src/lib/youtube.ts`) proxies `search.list` server-side to
-  protect the API key and quota, then fetches durations via `videos.list`.
-  The request page requires an explicit **Search** button and a **500 ms
-  debounce** — `search.list` costs 100 units against the 10k/day free quota, so
-  per-keystroke search is deliberately impossible.
-- **Sessions** (`src/lib/session.ts`) are random ids signed with HMAC. The
-  client mirrors the id into `localStorage` and re-syncs the cookie on load
-  (`/api/session`) because in-app browsers (Instagram/WhatsApp/camera) often
-  drop cookies. Best-effort, not bulletproof — see the code comments.
-- **Request limit** (default 3 active per attendee) is enforced **server-side**
-  and stored on the `Event` row, adjustable in the admin Settings panel.
-- **Realtime** is 5-second polling (`src/lib/useQueuePolling.ts`). Phase 3
-  swaps this for WebSockets — the swap is isolated to that hook. Look for
-  `TODO(Phase 3)`.
-- **Multi-tenancy:** everything is keyed by `eventId`, but Phase 1 uses one
-  fixed event (`src/lib/constants.ts` → `EVENT_ID`).
+- Multi-event organizers (slug URL + access code per event)
+- Guest join by name + device lock (no email)
+- YouTube search with DB cache (15 min) and daily quota tracking
+- Pending moderation, bulk actions, blocked keywords / max duration
+- Crowd upvotes on pending + approved (not currently playing)
+- Vote-ranked “next” / auto-advance when a song ends
+- Fallback playlist when the live queue is empty
+- Display timeline sync (admin position ticks → smooth interpolation on display)
+- Cinematic public UI (cyan / charcoal; art-tinted stage)
+- Pusher realtime with slow safety polling + in-flight request dedupe
+- Public QR always prefers custom domain (never `*.vercel.app`)
 
-### Showcase / portfolio site
+---
 
-Marketing landing lives in [`showcase/`](./showcase) — deploy as a **separate
-Vercel project** (Root Directory = `showcase`) and attach a Cloudflare
-subdomain. See [`showcase/README.md`](./showcase/README.md).
+## Scripts
 
-### API routes
-
-| Method + Route | Purpose |
-| --- | --- |
-| `GET /api/search?q=` | Proxied YouTube search (server-side key). |
-| `POST /api/requests` | Create a request; enforces the per-session limit. |
-| `GET /api/requests?mine=1` | The caller's own requests (status list). |
-| `GET /api/requests?status=pending` | Admin: list by status. |
-| `PATCH /api/requests/:id` | Admin: `approve` / `reject` / `remove` / `move` / `play` / `next`. |
-| `GET /api/queue` | Public: Now Playing + upcoming queue. |
-| `GET`/`PATCH /api/settings` | Admin: request limit + approval mode. |
-| `GET`/`POST`/`DELETE /api/admin/login` | Admin cookie auth. |
-| `GET`/`POST /api/session` | Issue/sync the attendee session. |
+```bash
+npm run dev              # app
+npm run build
+npm run db:seed          # seed admin + default event
+npm run db:deploy        # prisma migrate deploy (local DATABASE_URL)
+npm run db:turso         # apply migrations to Turso (production)
+npm run db:turso -- --reset  # destructive Turso reset → then db:seed
+npm run showcase:dev     # marketing site in ./showcase (if present)
+```
 
 ---
 
 ## Deployment (Vercel + Turso)
 
-Vercel's filesystem is **ephemeral**, so a local SQLite file will not persist.
-Use Turso (hosted LibSQL) for any real deployment:
+Vercel’s filesystem is ephemeral — **local SQLite will not persist**. Use Turso:
 
-1. Install the Turso CLI, then:
-   ```bash
-   turso db create isw-wave
-   turso db show isw-wave --url          # → TURSO_DATABASE_URL
-   turso db tokens create isw-wave       # → TURSO_AUTH_TOKEN
-   ```
-2. Apply the schema to Turso (point `DATABASE_URL` at the libsql URL for the
-   migrate step, or use `turso db shell` with the generated migration SQL).
-3. Set `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `YOUTUBE_API_KEY`,
-   `ADMIN_PASSWORD`, `SESSION_SECRET`, and `NEXT_PUBLIC_BASE_URL` in the Vercel
-   project's environment variables. When `TURSO_DATABASE_URL` is set, the app
-   uses it automatically (see `src/lib/db-config.ts`).
+1. Create a Turso DB and set `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` on Vercel.
+2. Apply schema:  
+   `TURSO_DATABASE_URL=… TURSO_AUTH_TOKEN=… npm run db:turso`
+3. Set also: `YOUTUBE_API_KEY`, `SESSION_SECRET`, `NEXT_PUBLIC_BASE_URL=https://isw-wave.isharaka.dev`, and Pusher keys.
+4. Attach custom domain `isw-wave.isharaka.dev`. Disable Deployment Protection for public guest/QR routes if guests would otherwise hit Vercel SSO.
+5. Redeploy after env changes.
+
+**Showcase / portfolio landing** lives in [`showcase/`](./showcase) (or the separate [`isw-wave-showcase`](https://github.com/shohan-001/isw-wave-showcase) repo) at `wave.isharaka.dev`. Deploy it as its **own** Vercel project.
 
 ---
 
-## Scope boundaries (intentionally NOT built in Phase 1)
+## Project map (high level)
 
-- No signup/login (name + session only) — Phase 2.
-- No WebSockets (polling instead) — Phase 3.
-- No crowd voting — Phase 3.
-- No multi-event UI (schema is ready, one event row used) — Phase 5.
-- YouTube ads can't be skipped via the API; preloading only removes the
-  load-time gap between songs, not ads. This is a platform limitation.
+```
+src/app/           # pages + API routes
+src/lib/           # db, auth, youtube, realtime, polling, player
+src/components/    # UI (incl. cinematic/)
+prisma/            # schema + migrations + seed
+scripts/           # turso-migrate, phase data helpers
+showcase/          # marketing site (optional nested / separate repo)
+AGENTS.md          # source-of-truth notes for coding agents
+```
+
+---
+
+## License / status
+
+Private project · actively used for live events. See `AGENTS.md` for architecture gotchas and maintenance rules.
