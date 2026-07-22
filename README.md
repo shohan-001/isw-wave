@@ -5,7 +5,7 @@ Live song-request platform for campus events, hack nights, and parties.
 Guests scan a QR code, search YouTube, request tracks, and upvote the queue. Organizers moderate in a control room and drive **venue audio** from the admin laptop. A hall **display** stays silent and shows now playing, up next, and the join QR.
 
 **Live app:** [isw-wave.isharaka.dev](https://isw-wave.isharaka.dev)  
-**Showcase:** [wave.isharaka.dev](https://wave.isharaka.dev) · repo [`isw-wave-showcase`](https://github.com/shohan-001/isw-wave-showcase)  
+**Showcase:** [wave.isharaka.dev](https://wave.isharaka.dev) · 
 **Author:** Isharaka Shohan
 
 > For AI / coding agents: read **[`AGENTS.md`](./AGENTS.md)** first. Update it after every major change.
