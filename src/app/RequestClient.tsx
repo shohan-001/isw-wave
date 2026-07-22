@@ -5,6 +5,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import { formatDuration, type AuthUser, type PublicRequest } from "@/lib/types";
 import type { SearchResult } from "@/lib/youtube";
 import { StatusBadge } from "@/components/StatusBadge";
+import {
+  isClientRealtimeConfigured,
+  useEventRealtime,
+} from "@/lib/useEventRealtime";
 
 type Phase = "idle" | "searching" | "results";
 
@@ -26,8 +30,10 @@ export function RequestClient({
   const [justSubmitted, setJustSubmitted] = useState(false);
 
   const [mine, setMine] = useState<PublicRequest[]>([]);
+  const [crowd, setCrowd] = useState<PublicRequest[]>([]);
   const [used, setUsed] = useState(0);
   const [limit, setLimit] = useState(0);
+  const [voteBusy, setVoteBusy] = useState<string | null>(null);
 
   const loadMine = useCallback(async () => {
     const res = await fetch("/api/requests?mine=1", { cache: "no-store" });
@@ -43,17 +49,36 @@ export function RequestClient({
     }
   }, []);
 
+  const loadCrowd = useCallback(async () => {
+    const res = await fetch("/api/requests?crowd=1", { cache: "no-store" });
+    if (res.ok) {
+      const data = (await res.json()) as { requests: PublicRequest[] };
+      setCrowd(data.requests);
+    }
+  }, []);
+
   useEffect(() => {
     loadMine();
-  }, [loadMine]);
+    loadCrowd();
+  }, [loadMine, loadCrowd]);
 
-  // Poll my-requests every 5s so status (pending→approved/played) and the
-  // remaining-slots count stay fresh as songs play out.
-  // TODO(Phase 3): replace polling with a WebSocket subscription.
+  // Polling fallback when Pusher keys aren't configured.
   useEffect(() => {
-    const t = setInterval(loadMine, 5000);
+    const ms = isClientRealtimeConfigured() ? 30000 : 5000;
+    const t = setInterval(() => {
+      void loadMine();
+      void loadCrowd();
+    }, ms);
     return () => clearInterval(t);
-  }, [loadMine]);
+  }, [loadMine, loadCrowd]);
+
+  useEventRealtime(user.eventId, {
+    "requests:update": () => {
+      void loadMine();
+      void loadCrowd();
+    },
+    "pending:update": () => void loadCrowd(),
+  });
 
   // --- Search: 500ms debounce AND explicit submit both gate the API call. ---
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -107,6 +132,9 @@ export function RequestClient({
       status: "pending",
       queuePosition: null,
       createdAt: new Date().toISOString(),
+      voteCount: 0,
+      flagged: false,
+      flagReason: "",
     };
     setMine((m) => [optimistic, ...m]);
     setUsed((u) => u + 1);
@@ -135,13 +163,41 @@ export function RequestClient({
       setJustSubmitted(true);
       setSelected(null);
       setSubmitting(false);
-      await loadMine();
+      await Promise.all([loadMine(), loadCrowd()]);
       setTimeout(() => setJustSubmitted(false), 2200);
     } catch {
       setMine((m) => m.filter((r) => r.id !== optimistic.id));
       setUsed((u) => Math.max(0, u - 1));
       setSubmitError("Network error. Try again.");
       setSubmitting(false);
+    }
+  }
+
+  async function toggleVote(requestId: string) {
+    setVoteBusy(requestId);
+    try {
+      const res = await fetch("/api/votes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ requestId }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          request: PublicRequest;
+          iVoted: boolean;
+        };
+        setCrowd((list) =>
+          list
+            .map((r) =>
+              r.id === requestId
+                ? { ...data.request, iVoted: data.iVoted }
+                : r
+            )
+            .sort((a, b) => b.voteCount - a.voteCount)
+        );
+      }
+    } finally {
+      setVoteBusy(null);
     }
   }
 
@@ -276,6 +332,61 @@ export function RequestClient({
         </ul>
       </section>
 
+      {/* Crowd pending — upvote songs others requested */}
+      <section className="mt-8">
+        <h2 className="mb-2 px-1 font-display text-sm font-semibold uppercase tracking-wide text-white/40">
+          Pending requests{" "}
+          <span className="text-white/25">{crowd.length}</span>
+        </h2>
+        <p className="mb-3 px-1 text-xs text-white/35">
+          Upvote songs you also want — helps the DJ prioritize. Does not
+          auto-approve.
+        </p>
+        <ul className="flex flex-col gap-2">
+          <AnimatePresence initial={false}>
+            {crowd.map((r) => (
+              <motion.li
+                key={r.id}
+                layout
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="flex items-center gap-3 rounded-2xl border border-white/5 bg-surface/40 p-2.5"
+              >
+                <Thumb src={r.thumbnailUrl} alt={r.title} small />
+                <span className="min-w-0 flex-1">
+                  <span className="line-clamp-1 text-sm font-medium text-white">
+                    {r.title}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-white/45">
+                    {r.requesterName}
+                    {r.flagged ? " · flagged" : ""}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  disabled={voteBusy === r.id}
+                  onClick={() => toggleVote(r.id)}
+                  className={`flex flex-col items-center rounded-xl border px-2.5 py-1.5 text-xs font-bold transition active:scale-95 disabled:opacity-50 ${
+                    r.iVoted
+                      ? "border-wave bg-wave/20 text-wave-400"
+                      : "border-white/15 text-white/50 hover:border-wave/40"
+                  }`}
+                >
+                  <span>▲</span>
+                  <span>{r.voteCount}</span>
+                </button>
+              </motion.li>
+            ))}
+          </AnimatePresence>
+          {crowd.length === 0 && (
+            <li className="py-4 text-center text-sm text-white/30">
+              No pending requests yet — be the first.
+            </li>
+          )}
+        </ul>
+      </section>
+
       {/* My requests */}
       {mine.length > 0 && (
         <section className="mt-8">
@@ -300,6 +411,11 @@ export function RequestClient({
                     </span>
                     <span className="mt-1 block">
                       <StatusBadge status={r.status} />
+                      {r.flagged && (
+                        <span className="ml-2 text-[10px] font-semibold uppercase text-amber-300">
+                          Flagged
+                        </span>
+                      )}
                     </span>
                   </span>
                 </motion.li>

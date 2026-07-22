@@ -54,7 +54,7 @@ export async function GET(req: Request) {
     eventName: event.name,
     accessCode: event.accessCode,
     nowPlaying: nowPlaying ? toPublicRequest(nowPlaying) : null,
-    queue: queue.map(toPublicRequest),
+    queue: queue.map((r) => toPublicRequest(r)),
   };
   return NextResponse.json(payload);
 }

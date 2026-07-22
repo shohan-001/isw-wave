@@ -8,10 +8,15 @@ import {
   toPublicRequest,
   requireEventById,
 } from "@/lib/queries";
+import { checkAutoModeration } from "@/lib/moderation";
+import {
+  notifyPending,
+  notifyQueue,
+  notifyRequests,
+} from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
 
- // POST /api/requests — participant creates a song request for their event.
 export async function POST(req: Request) {
   const session = await getCurrentUser();
   if (!session || session.role !== "participant") {
@@ -47,37 +52,65 @@ export async function POST(req: Request) {
     );
   }
 
-  const autoApprove = event.approvalMode === "auto";
+  const title = body.title.slice(0, 200);
+  const durationSeconds = Math.max(0, Math.floor(body.durationSeconds || 0));
+  const modHit = checkAutoModeration({
+    title,
+    durationSeconds,
+    maxSongSeconds: event.maxSongSeconds,
+    blockedKeywords: event.blockedKeywords,
+  });
+
+  if (modHit && event.autoModMode === "reject") {
+    return NextResponse.json(
+      { error: modHit.reason, moderated: true },
+      { status: 422 }
+    );
+  }
+
+  const autoApprove = event.approvalMode === "auto" && !modHit;
   const created = await prisma.request.create({
     data: {
       eventId: event.id,
       youtubeVideoId: body.youtubeVideoId,
-      title: body.title.slice(0, 200),
+      title,
       thumbnailUrl: body.thumbnailUrl || "",
-      durationSeconds: Math.max(0, Math.floor(body.durationSeconds || 0)),
+      durationSeconds,
       channelName: (body.channelName || "").slice(0, 100),
       participantId: session.id,
       requesterName: session.displayName,
       status: autoApprove ? STATUS.APPROVED : STATUS.PENDING,
       queuePosition: autoApprove ? await nextQueuePosition(event.id) : null,
+      flagged: Boolean(modHit),
+      flagReason: modHit?.reason ?? "",
     },
   });
+
+  await Promise.all([
+    notifyPending(event.id),
+    notifyRequests(event.id),
+    autoApprove ? notifyQueue(event.id) : Promise.resolve(),
+  ]);
 
   return NextResponse.json(
     {
       request: toPublicRequest(created),
       used: active + 1,
       limit: event.requestLimit,
+      flagged: created.flagged,
+      flagReason: created.flagReason || undefined,
     },
     { status: 201 }
   );
 }
 
- // GET /api/requests?mine=1        -> participant's own requests + quota
- // GET /api/requests?status=...    -> admin: list by status for their event
+ // GET /api/requests?mine=1
+ // GET /api/requests?crowd=1          -> public pending (participants) + votes
+ // GET /api/requests?status=pending&sort=votes  -> admin
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const mine = searchParams.get("mine");
+  const crowd = searchParams.get("crowd");
 
   if (mine) {
     const session = await getCurrentUser();
@@ -93,9 +126,31 @@ export async function GET(req: Request) {
       countActiveRequests(session.eventId, session.id),
     ]);
     return NextResponse.json({
-      requests: rows.map(toPublicRequest),
+      requests: rows.map((r) => toPublicRequest(r)),
       used: active,
       limit: event.requestLimit,
+    });
+  }
+
+  if (crowd) {
+    const session = await getCurrentUser();
+    if (!session || session.role !== "participant") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const rows = await prisma.request.findMany({
+      where: { eventId: session.eventId, status: STATUS.PENDING },
+      orderBy: [{ voteCount: "desc" }, { createdAt: "asc" }],
+      include: {
+        votes: {
+          where: { participantId: session.id },
+          select: { id: true },
+        },
+      },
+    });
+    return NextResponse.json({
+      requests: rows.map((r) =>
+        toPublicRequest(r, { iVoted: r.votes.length > 0 })
+      ),
     });
   }
 
@@ -104,12 +159,15 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const status = searchParams.get("status") || STATUS.PENDING;
+  const sort = searchParams.get("sort") || "time";
   const rows = await prisma.request.findMany({
     where: { eventId: admin.eventId, status },
     orderBy:
       status === STATUS.APPROVED
         ? { queuePosition: "asc" }
+        : sort === "votes"
+        ? [{ voteCount: "desc" }, { createdAt: "asc" }]
         : { createdAt: "asc" },
   });
-  return NextResponse.json({ requests: rows.map(toPublicRequest) });
+  return NextResponse.json({ requests: rows.map((r) => toPublicRequest(r)) });
 }

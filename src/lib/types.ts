@@ -1,6 +1,5 @@
 // Shared types + tiny helpers usable on client and server (no server-only deps).
 
- // Client-safe view of the current session (admin or participant).
 export type AuthUser =
   | {
       role: "admin";
@@ -29,6 +28,10 @@ export type PublicRequest = {
   status: "pending" | "approved" | "rejected" | "played";
   queuePosition: number | null;
   createdAt: string;
+  voteCount: number;
+  flagged: boolean;
+  flagReason: string;
+  iVoted?: boolean;
 };
 
 export type QueuePayload = {
@@ -36,7 +39,7 @@ export type QueuePayload = {
   eventName: string;
   accessCode: string;
   nowPlaying: PublicRequest | null;
-  queue: PublicRequest[]; // approved, in play order
+  queue: PublicRequest[];
 };
 
 export type Settings = {
@@ -45,9 +48,21 @@ export type Settings = {
   accessCode: string;
   eventName: string;
   eventId: string;
+  maxSongSeconds: number;
+  blockedKeywords: string;
+  autoModMode: "reject" | "flag";
 };
 
- // Format seconds as m:ss (or h:mm:ss for long videos).
+export type FallbackTrack = {
+  id: string;
+  youtubeVideoId: string;
+  title: string;
+  thumbnailUrl: string;
+  durationSeconds: number;
+  channelName: string;
+  position: number;
+};
+
 export function formatDuration(total: number): string {
   if (!total || total < 0) return "0:00";
   const h = Math.floor(total / 3600);

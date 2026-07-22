@@ -84,6 +84,8 @@ async function resetSchema(client: Client) {
   console.log("Resetting Turso schema (drops app tables)…");
   // Order matters for FKs; IF EXISTS keeps this safe on empty DBs.
   for (const table of [
+    "Vote",
+    "FallbackTrack",
     "Request",
     "Participant",
     "Event",
@@ -94,7 +96,7 @@ async function resetSchema(client: Client) {
   }
 }
 
-/** Final Phase-2 schema in one shot (used after --reset). */
+/** Final Phase-3 schema in one shot (used after --reset). */
 async function applyFinalSchema(client: Client) {
   const statements = [
     `CREATE TABLE "User" (
@@ -114,6 +116,9 @@ async function applyFinalSchema(client: Client) {
       "adminId" TEXT NOT NULL,
       "requestLimit" INTEGER NOT NULL DEFAULT 3,
       "approvalMode" TEXT NOT NULL DEFAULT 'manual',
+      "maxSongSeconds" INTEGER NOT NULL DEFAULT 480,
+      "blockedKeywords" TEXT NOT NULL DEFAULT '',
+      "autoModMode" TEXT NOT NULL DEFAULT 'reject',
       "currentRequestId" TEXT,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL,
@@ -145,6 +150,9 @@ async function applyFinalSchema(client: Client) {
       "requesterName" TEXT NOT NULL,
       "status" TEXT NOT NULL DEFAULT 'pending',
       "queuePosition" INTEGER,
+      "voteCount" INTEGER NOT NULL DEFAULT 0,
+      "flagged" BOOLEAN NOT NULL DEFAULT false,
+      "flagReason" TEXT NOT NULL DEFAULT '',
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL,
       CONSTRAINT "Request_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -152,6 +160,30 @@ async function applyFinalSchema(client: Client) {
     )`,
     `CREATE INDEX "Request_eventId_status_idx" ON "Request"("eventId", "status")`,
     `CREATE INDEX "Request_participantId_idx" ON "Request"("participantId")`,
+    `CREATE INDEX "Request_eventId_voteCount_idx" ON "Request"("eventId", "voteCount")`,
+    `CREATE TABLE "Vote" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "requestId" TEXT NOT NULL,
+      "participantId" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "Vote_requestId_fkey" FOREIGN KEY ("requestId") REFERENCES "Request" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "Vote_participantId_fkey" FOREIGN KEY ("participantId") REFERENCES "Participant" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    )`,
+    `CREATE UNIQUE INDEX "Vote_requestId_participantId_key" ON "Vote"("requestId", "participantId")`,
+    `CREATE INDEX "Vote_requestId_idx" ON "Vote"("requestId")`,
+    `CREATE TABLE "FallbackTrack" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "eventId" TEXT NOT NULL,
+      "youtubeVideoId" TEXT NOT NULL,
+      "title" TEXT NOT NULL,
+      "thumbnailUrl" TEXT NOT NULL,
+      "durationSeconds" INTEGER NOT NULL DEFAULT 0,
+      "channelName" TEXT NOT NULL DEFAULT '',
+      "position" INTEGER NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "FallbackTrack_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    )`,
+    `CREATE INDEX "FallbackTrack_eventId_position_idx" ON "FallbackTrack"("eventId", "position")`,
   ];
 
   for (const statement of statements) {

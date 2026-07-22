@@ -17,18 +17,24 @@ export async function requireEventById(eventId: string) {
   return event;
 }
 
-export function toPublicRequest(r: {
-  id: string;
-  youtubeVideoId: string;
-  title: string;
-  thumbnailUrl: string;
-  durationSeconds: number;
-  channelName: string;
-  requesterName: string;
-  status: string;
-  queuePosition: number | null;
-  createdAt: Date;
-}): PublicRequest {
+export function toPublicRequest(
+  r: {
+    id: string;
+    youtubeVideoId: string;
+    title: string;
+    thumbnailUrl: string;
+    durationSeconds: number;
+    channelName: string;
+    requesterName: string;
+    status: string;
+    queuePosition: number | null;
+    createdAt: Date;
+    voteCount?: number;
+    flagged?: boolean;
+    flagReason?: string;
+  },
+  extras?: { iVoted?: boolean }
+): PublicRequest {
   return {
     id: r.id,
     youtubeVideoId: r.youtubeVideoId,
@@ -40,10 +46,13 @@ export function toPublicRequest(r: {
     status: r.status as PublicRequest["status"],
     queuePosition: r.queuePosition,
     createdAt: r.createdAt.toISOString(),
+    voteCount: r.voteCount ?? 0,
+    flagged: r.flagged ?? false,
+    flagReason: r.flagReason ?? "",
+    iVoted: extras?.iVoted,
   };
 }
 
- // Count a participant's active requests (pending or approved/queued).
 export async function countActiveRequests(
   eventId: string,
   participantId: string

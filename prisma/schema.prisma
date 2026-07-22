@@ -1,12 +1,9 @@
-// ISW Wave — Prisma schema (Phase 2: event-code join)
-// Uses the LibSQL driver adapter: a plain local SQLite file in dev, and a
- // hosted Turso/LibSQL instance in production (see src/lib/db.ts).
+// ISW Wave — Prisma schema (Phase 3: realtime, votes, moderation, fallback)
+// LibSQL adapter: local SQLite in dev, Turso in production (see src/lib/db.ts).
 //
-// Phase 2 auth model:
-// - Admins: User accounts (email/username + password). Each admin owns Event(s).
-// - Attendees: Participant rows — join with display name + Event.accessCode.
- //   No email/password. A deviceId locks a phone to one display name forever.
- // - Multiple events can run at once (each has its own accessCode + queue).
+// Phase 2 auth (unchanged): admins = User + password; attendees = Participant
+ // (name + access code). Phase 3 adds votes, auto-moderation settings, and a
+ // fallback playlist — still single-event oriented (multi-tenant is Phase 5).
 
 generator client {
   provider = "prisma-client-js"
@@ -21,33 +18,31 @@ model Event {
   id   String @id @default(cuid())
   name String
 
-  // Short code attendees type (or scan via QR) to join this event.
-  // Unique so two simultaneous events never collide.
   accessCode String @unique
+  adminId    String
+  admin      User   @relation("EventAdmin", fields: [adminId], references: [id])
 
-  // Owning admin. Required for multi-event: each control room scopes to its
-  // admin's event(s). Phase 5 can add multi-admin / invite flows later.
-  adminId String
-  admin   User   @relation("EventAdmin", fields: [adminId], references: [id])
-
-  // --- Settings live directly on the Event ---
-  requestLimit Int    @default(3) // max pending/queued requests per participant
+  requestLimit Int    @default(3)
   approvalMode String @default("manual") // "manual" | "auto"
 
-  // Which request is currently playing on the admin (audio) player.
+  // Phase 3 — auto-moderation (per event)
+  maxSongSeconds   Int    @default(480) // 0 = disabled; default 8 minutes
+  blockedKeywords  String @default("") // comma / newline separated
+  autoModMode      String @default("reject") // "reject" | "flag"
+
   currentRequestId String? @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  participants Participant[] @relation("EventParticipants")
-  requests     Request[]     @relation("EventRequests")
-  current      Request?      @relation("CurrentlyPlaying", fields: [currentRequestId], references: [id])
+  participants   Participant[]    @relation("EventParticipants")
+  requests       Request[]        @relation("EventRequests")
+  fallbackTracks FallbackTrack[]  @relation("EventFallback")
+  current        Request?         @relation("CurrentlyPlaying", fields: [currentRequestId], references: [id])
 
   @@index([adminId])
 }
 
-// Admin accounts only. Attendees never get a User row — they join as Participant.
 model User {
   id           String  @id @default(cuid())
   username     String  @unique
@@ -60,9 +55,6 @@ model User {
   events Event[] @relation("EventAdmin")
 }
 
-// An attendee joined to a specific event. deviceId is a client-generated UUID
- // stored in localStorage. Once a device has used a display name anywhere, that
- // name is locked for the device (enforced in /api/auth/join).
 model Participant {
   id          String @id @default(cuid())
   eventId     String
@@ -73,8 +65,8 @@ model Participant {
 
   event    Event     @relation("EventParticipants", fields: [eventId], references: [id])
   requests Request[] @relation("ParticipantRequests")
+  votes    Vote[]    @relation("ParticipantVotes")
 
-  // One join per device per event (re-join restores the same participant).
   @@unique([eventId, deviceId])
   @@index([deviceId])
   @@index([eventId])
@@ -95,16 +87,52 @@ model Request {
   // pending | approved | rejected | played
   status String @default("pending")
 
-  // Order within the approved queue. Null unless status = approved.
   queuePosition Int?
+  voteCount     Int     @default(0)
+  flagged       Boolean @default(false)
+  flagReason    String  @default("")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  event       Event       @relation("EventRequests", fields: [eventId], references: [id])
-  participant Participant @relation("ParticipantRequests", fields: [participantId], references: [id])
-  nowPlayingFor Event?    @relation("CurrentlyPlaying")
+  event         Event       @relation("EventRequests", fields: [eventId], references: [id])
+  participant   Participant @relation("ParticipantRequests", fields: [participantId], references: [id])
+  votes         Vote[]      @relation("RequestVotes")
+  nowPlayingFor Event?      @relation("CurrentlyPlaying")
 
   @@index([eventId, status])
   @@index([participantId])
+  @@index([eventId, voteCount])
+}
+
+model Vote {
+  id            String @id @default(cuid())
+  requestId     String
+  participantId String
+
+  createdAt DateTime @default(now())
+
+  request     Request     @relation("RequestVotes", fields: [requestId], references: [id], onDelete: Cascade)
+  participant Participant @relation("ParticipantVotes", fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, participantId])
+  @@index([requestId])
+}
+
+ // Admin-curated backup playlist — plays when the approved queue is empty.
+model FallbackTrack {
+  id              String @id @default(cuid())
+  eventId         String
+  youtubeVideoId  String
+  title           String
+  thumbnailUrl    String
+  durationSeconds Int    @default(0)
+  channelName     String @default("")
+  position        Int
+
+  createdAt DateTime @default(now())
+
+  event Event @relation("EventFallback", fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, position])
 }

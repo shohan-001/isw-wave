@@ -2,10 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { QueuePayload } from "@/lib/types";
+import {
+  isClientRealtimeConfigured,
+  useEventRealtime,
+} from "@/lib/useEventRealtime";
 
- // Poll /api/queue every `intervalMs`. Pass code or eventId so simultaneous
- // events stay isolated (display uses code; admin uses session fallback).
- // TODO(Phase 3): replace polling with a WebSocket subscription.
+ // Fetch /api/queue. Prefer Pusher push; fall back to 5s polling when unset.
+ // TODO(Phase 3): polling remains as graceful degradation without Pusher keys.
 export function useQueuePolling(
   intervalMs = 5000,
   opts?: { code?: string | null; eventId?: string | null }
@@ -15,6 +18,7 @@ export function useQueuePolling(
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const code = opts?.code ?? null;
   const eventId = opts?.eventId ?? null;
+  const realtime = isClientRealtimeConfigured();
 
   useEffect(() => {
     let active = true;
@@ -38,12 +42,36 @@ export function useQueuePolling(
       }
     }
     tick();
-    timer.current = setInterval(tick, intervalMs);
+    // Poll only when realtime isn't configured (or as a slow safety net).
+    const ms = realtime ? Math.max(intervalMs * 6, 30000) : intervalMs;
+    timer.current = setInterval(tick, ms);
     return () => {
       active = false;
       if (timer.current) clearInterval(timer.current);
     };
-  }, [intervalMs, code, eventId]);
+  }, [intervalMs, code, eventId, realtime]);
 
-  return { data, error };
+  const resolvedEventId = eventId || data?.eventId || null;
+  useEventRealtime(resolvedEventId, {
+    "queue:update": () => {
+      void (async () => {
+        try {
+          const params = new URLSearchParams();
+          if (code) params.set("code", code);
+          else if (resolvedEventId) params.set("eventId", resolvedEventId);
+          const qs = params.toString();
+          const res = await fetch(`/api/queue${qs ? `?${qs}` : ""}`, {
+            cache: "no-store",
+          });
+          if (!res.ok) return;
+          setData((await res.json()) as QueuePayload);
+          setError(false);
+        } catch {
+          /* ignore — next poll will retry */
+        }
+      })();
+    },
+  });
+
+  return { data, error, realtime };
 }

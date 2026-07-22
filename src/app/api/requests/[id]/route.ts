@@ -3,6 +3,11 @@ import { prisma } from "@/lib/db";
 import { STATUS } from "@/lib/constants";
 import { requireAdmin } from "@/lib/auth";
 import { nextQueuePosition, toPublicRequest } from "@/lib/queries";
+import {
+  notifyPending,
+  notifyQueue,
+  notifyRequests,
+} from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +33,8 @@ export async function PATCH(
     return NextResponse.json({ error: "Request not found" }, { status: 404 });
   }
 
+  let response: NextResponse;
+
   switch (action) {
     case "approve": {
       const updated = await prisma.request.update({
@@ -35,9 +42,12 @@ export async function PATCH(
         data: {
           status: STATUS.APPROVED,
           queuePosition: await nextQueuePosition(eventId),
+          flagged: false,
+          flagReason: "",
         },
       });
-      return NextResponse.json({ request: toPublicRequest(updated) });
+      response = NextResponse.json({ request: toPublicRequest(updated) });
+      break;
     }
 
     case "reject":
@@ -52,7 +62,8 @@ export async function PATCH(
         where: { id },
         data: { status: STATUS.REJECTED, queuePosition: null },
       });
-      return NextResponse.json({ request: toPublicRequest(updated) });
+      response = NextResponse.json({ request: toPublicRequest(updated) });
+      break;
     }
 
     case "move": {
@@ -75,7 +86,8 @@ export async function PATCH(
         orderBy: { queuePosition: dir === "up" ? "desc" : "asc" },
       });
       if (!neighbor || neighbor.queuePosition == null) {
-        return NextResponse.json({ request: toPublicRequest(target) });
+        response = NextResponse.json({ request: toPublicRequest(target) });
+        break;
       }
       await prisma.$transaction([
         prisma.request.update({
@@ -88,7 +100,8 @@ export async function PATCH(
         }),
       ]);
       const updated = await prisma.request.findUnique({ where: { id } });
-      return NextResponse.json({ request: toPublicRequest(updated!) });
+      response = NextResponse.json({ request: toPublicRequest(updated!) });
+      break;
     }
 
     case "play": {
@@ -102,7 +115,8 @@ export async function PATCH(
         where: { id: eventId },
         data: { currentRequestId: id },
       });
-      return NextResponse.json({ ok: true });
+      response = NextResponse.json({ ok: true });
+      break;
     }
 
     case "next": {
@@ -111,12 +125,20 @@ export async function PATCH(
         where: { id },
         data: { status: STATUS.PLAYED, queuePosition: null },
       });
-      return NextResponse.json({ ok: true, nextRequestId: nextId });
+      response = NextResponse.json({ ok: true, nextRequestId: nextId });
+      break;
     }
 
     default:
       return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   }
+
+  await Promise.all([
+    notifyQueue(eventId),
+    notifyPending(eventId),
+    notifyRequests(eventId),
+  ]);
+  return response;
 }
 
 async function advanceToNext(
