@@ -14,7 +14,7 @@ const body = Inter({
 });
 
 const siteUrl =
-  process.env.NEXT_PUBLIC_BASE_URL || "https://isw-wave.vercel.app";
+  process.env.NEXT_PUBLIC_BASE_URL || "https://isw-wave.isharaka.dev";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
