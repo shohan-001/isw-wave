@@ -14,7 +14,7 @@ export default async function DisplayPage({
   const baseUrl =
     process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
-  let accessCode = searchParams?.code
+  const accessCode = searchParams?.code
     ? normalizeAccessCode(searchParams.code)
     : "";
   let eventId = searchParams?.eventId || "";
