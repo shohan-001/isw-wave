@@ -37,13 +37,14 @@ export function AdminDashboard({
   eventSlug: string;
   initialAccent?: string;
 }) {
-  const { data, realtime } = useQueuePolling(5000, { eventId });
+  const { data, realtime, refetch } = useQueuePolling(5000, { eventId });
   // Queue API mirrors fallback onto nowPlaying for the hall display — never treat
   // that as a live request or we'll clear currentFallbackId in a tight loop.
   const now =
     data?.nowPlaying && !data.nowPlayingIsFallback ? data.nowPlaying : null;
   const queue = useMemo(() => data?.queue ?? [], [data?.queue]);
   const syncedFallbackId = useRef<string | null>(null);
+  const advancingRef = useRef(false);
 
   const [pending, setPending] = useState<PublicRequest[]>([]);
   const [pendingSort, setPendingSort] = useState<PendingSort>("votes");
@@ -187,18 +188,29 @@ export function AdminDashboard({
     : null;
 
   const advance = useCallback(async () => {
-    if (now) {
-      await fetch(`/api/requests/${now.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "next" }),
-      });
-      return;
+    if (advancingRef.current) return;
+    advancingRef.current = true;
+    try {
+      if (now) {
+        await fetch(`/api/requests/${now.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "next" }),
+        });
+        // Don't wait for the next poll — load the new current track now.
+        refetch();
+        return;
+      }
+      if (usingFallback && fallback.length > 0) {
+        setFallbackIndex((i) => (i + 1) % fallback.length);
+      }
+    } finally {
+      // Allow a new ENDED only after the next video has had time to load.
+      window.setTimeout(() => {
+        advancingRef.current = false;
+      }, 1200);
     }
-    if (usingFallback && fallback.length > 0) {
-      setFallbackIndex((i) => (i + 1) % fallback.length);
-    }
-  }, [now, usingFallback, fallback.length]);
+  }, [now, usingFallback, fallback.length, refetch]);
 
   const player = useYouTubePlayer({
     videoId: activeVideoId,
@@ -261,6 +273,7 @@ export function AdminDashboard({
         body: JSON.stringify({ action, ...extra }),
       });
       await Promise.all([loadPending(), loadStats()]);
+      refetch();
     } finally {
       setBusyId(null);
     }
