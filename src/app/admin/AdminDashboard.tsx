@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { BrandMark } from "@/components/BrandMark";
 import { EventTheme } from "@/components/EventTheme";
@@ -38,8 +38,12 @@ export function AdminDashboard({
   initialAccent?: string;
 }) {
   const { data, realtime } = useQueuePolling(5000, { eventId });
-  const now = data?.nowPlaying ?? null;
+  // Queue API mirrors fallback onto nowPlaying for the hall display — never treat
+  // that as a live request or we'll clear currentFallbackId in a tight loop.
+  const now =
+    data?.nowPlaying && !data.nowPlayingIsFallback ? data.nowPlaying : null;
   const queue = useMemo(() => data?.queue ?? [], [data?.queue]);
+  const syncedFallbackId = useRef<string | null>(null);
 
   const [pending, setPending] = useState<PublicRequest[]>([]);
   const [pendingSort, setPendingSort] = useState<PendingSort>("votes");
@@ -154,6 +158,8 @@ export function AdminDashboard({
   // Keep the hall display in sync when admin is looping fallback audio.
   useEffect(() => {
     if (usingFallback && fallbackTrack) {
+      if (syncedFallbackId.current === fallbackTrack.id) return;
+      syncedFallbackId.current = fallbackTrack.id;
       void fetch("/api/playback", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -162,7 +168,8 @@ export function AdminDashboard({
       return;
     }
     // Live request owns the stage — clear any leftover fallback pointer.
-    if (now) {
+    if (now && syncedFallbackId.current !== null) {
+      syncedFallbackId.current = null;
       void fetch("/api/playback", {
         method: "POST",
         headers: { "content-type": "application/json" },
