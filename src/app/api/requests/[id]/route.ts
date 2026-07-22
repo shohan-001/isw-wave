@@ -113,7 +113,13 @@ export async function PATCH(
       }
       await prisma.event.update({
         where: { id: eventId },
-        data: { currentRequestId: id, currentFallbackId: "" },
+        data: {
+          currentRequestId: id,
+          currentFallbackId: "",
+          playbackPositionSec: 0,
+          playbackPlaying: true,
+          playbackUpdatedAt: new Date(),
+        },
       });
       response = NextResponse.json({ ok: true });
       break;
@@ -155,7 +161,12 @@ async function advanceToNext(
   });
   await prisma.event.update({
     where: { id: eventId },
-    data: { currentRequestId: next?.id ?? null },
+    data: {
+      currentRequestId: next?.id ?? null,
+      playbackPositionSec: 0,
+      playbackPlaying: Boolean(next),
+      playbackUpdatedAt: new Date(),
+    },
   });
   return next?.id ?? null;
 }

@@ -57,6 +57,11 @@ model Event {
   // When the queue is empty, admin may loop FallbackTrack — mirror that on display.
   currentFallbackId String @default("")
 
+  // Hall display timeline — last known YouTube position from admin player.
+  playbackPositionSec Float    @default(0)
+  playbackPlaying     Boolean  @default(false)
+  playbackUpdatedAt   DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -46,6 +46,12 @@ export type QueuePayload = {
   nowPlaying: PublicRequest | null;
   /** True when nowPlaying is a fallback playlist track (not a live request). */
   nowPlayingIsFallback: boolean;
+  /** Admin YouTube timeline snapshot for the hall display. */
+  playback: {
+    positionSec: number;
+    playing: boolean;
+    updatedAt: string | null;
+  };
   queue: PublicRequest[];
 };
 

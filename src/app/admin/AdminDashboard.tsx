@@ -206,6 +206,35 @@ export function AdminDashboard({
     onEnded: advance,
   });
 
+  // Push YouTube timeline to the hall display (~2s). Silent — no Pusher spam.
+  useEffect(() => {
+    if (!player.ready || !activeVideoId) return;
+    const tick = () => {
+      const playing = player.state === "playing";
+      void fetch("/api/playback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          positionSec: player.getCurrentTime(),
+          playing,
+        }),
+      });
+    };
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => clearInterval(id);
+  }, [player.ready, player.state, player.getCurrentTime, activeVideoId]);
+
+  // Reset server timeline when the loaded video changes.
+  useEffect(() => {
+    if (!activeVideoId) return;
+    void fetch("/api/playback", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ resetTimeline: true, playing: true, positionSec: 0 }),
+    });
+  }, [activeVideoId]);
+
   // Promote first queued song when nothing is "now playing".
   useEffect(() => {
     if (!now && queue.length > 0) {
