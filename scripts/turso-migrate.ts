@@ -18,20 +18,23 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { createClient, type Client } from "@libsql/client";
 
-const url = process.env.TURSO_DATABASE_URL?.trim();
-const authToken = process.env.TURSO_AUTH_TOKEN?.trim();
+const rawUrl = process.env.TURSO_DATABASE_URL?.trim();
+const rawToken = process.env.TURSO_AUTH_TOKEN?.trim();
 const reset = process.argv.includes("--reset");
 
-if (!url || !url.startsWith("libsql://")) {
+if (!rawUrl || !rawUrl.startsWith("libsql://")) {
   console.error(
     "Set TURSO_DATABASE_URL to your libsql://… URL (not a local file: URL)."
   );
   process.exit(1);
 }
-if (!authToken) {
+if (!rawToken) {
   console.error("Set TURSO_AUTH_TOKEN.");
   process.exit(1);
 }
+
+const url: string = rawUrl;
+const authToken: string = rawToken;
 
 const migrationsDir = path.join(process.cwd(), "prisma", "migrations");
 
