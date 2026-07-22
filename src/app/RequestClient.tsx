@@ -5,7 +5,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import { formatDuration, type AuthUser, type PublicRequest } from "@/lib/types";
 import type { SearchResult } from "@/lib/youtube";
 import { StatusBadge } from "@/components/StatusBadge";
-import { EventTheme } from "@/components/EventTheme";
+import { CinematicStage } from "@/components/cinematic/CinematicStage";
+import { GlassPanel } from "@/components/cinematic/GlassPanel";
+import { BrandMark } from "@/components/BrandMark";
+import { useQueuePolling } from "@/lib/useQueuePolling";
 import {
   isClientRealtimeConfigured,
   useEventRealtime,
@@ -15,7 +18,7 @@ type Phase = "idle" | "searching" | "results";
 
 export function RequestClient({
   eventName,
-  accentColor,
+  accentColor: _accentColor,
   logoUrl,
   user,
 }: {
@@ -24,6 +27,14 @@ export function RequestClient({
   logoUrl: string;
   user: Extract<AuthUser, { role: "participant" }>;
 }) {
+  void _accentColor; // public UI ignores organizer pink
+  const { data: queueData } = useQueuePolling(8000, { eventId: user.eventId });
+  const stageArt = queueData?.nowPlaying
+    ? queueData.nowPlaying.youtubeVideoId
+      ? `https://i.ytimg.com/vi/${queueData.nowPlaying.youtubeVideoId}/hqdefault.jpg`
+      : queueData.nowPlaying.thumbnailUrl
+    : null;
+
   const [query, setQuery] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -67,7 +78,6 @@ export function RequestClient({
     loadCrowd();
   }, [loadMine, loadCrowd]);
 
-  // Polling fallback when Pusher keys aren't configured.
   useEffect(() => {
     const ms = isClientRealtimeConfigured() ? 30000 : 5000;
     const t = setInterval(() => {
@@ -85,7 +95,6 @@ export function RequestClient({
     "pending:update": () => void loadCrowd(),
   });
 
-  // --- Search: 500ms debounce AND explicit submit both gate the API call. ---
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runSearch = useCallback(async (q: string) => {
@@ -125,7 +134,6 @@ export function RequestClient({
     setSubmitting(true);
     setSubmitError(null);
 
-    // Optimistic: show it as pending immediately.
     const optimistic: PublicRequest = {
       id: `optimistic-${selected.youtubeVideoId}`,
       youtubeVideoId: selected.youtubeVideoId,
@@ -158,7 +166,6 @@ export function RequestClient({
       });
       const data = await res.json();
       if (!res.ok) {
-        // Roll back the optimistic entry and surface the error.
         setMine((m) => m.filter((r) => r.id !== optimistic.id));
         setUsed((u) => Math.max(0, u - 1));
         setSubmitError(data.error || "Could not submit request.");
@@ -212,291 +219,275 @@ export function RequestClient({
   }
 
   return (
-    <EventTheme accentColor={accentColor} className="min-h-screen">
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 pb-24 pt-6">
-      {/* Branding + account */}
-      <header className="mb-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={logoUrl}
-                alt=""
-                className="h-8 max-h-[40px] w-auto object-contain"
-              />
-            ) : (
-              <WaveMark />
-            )}
-            <span className="font-display text-sm font-medium uppercase tracking-[0.2em] text-wave-400">
-              ISW Wave
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-white/45">{user.displayName}</span>
-            <button
-              onClick={logout}
-              className="rounded-full border border-white/10 px-2.5 py-1 font-medium text-white/50 transition active:scale-95"
-            >
-              Leave
-            </button>
-          </div>
-        </div>
-        <h1 className="mt-3 font-display text-3xl font-bold leading-tight text-white">
-          {eventName}
-        </h1>
-        <p className="mt-1 text-sm text-white/50">
-          Search a song and send it to the stage.
-        </p>
-      </header>
-
-      {/* Quota line */}
-      <QuotaLine used={used} limit={limit} />
-
-      {/* Search */}
-      <form onSubmit={onSubmitSearch} className="sticky top-3 z-10 mt-4">
-        <div className="flex gap-2 rounded-2xl border border-white/10 bg-surface/80 p-2 shadow-glow backdrop-blur">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            inputMode="search"
-            enterKeyHint="search"
-            placeholder="Search for a song…"
-            className="min-w-0 flex-1 bg-transparent px-3 py-2 text-base text-white placeholder:text-white/35 focus:outline-none"
-            aria-label="Search for a song"
-          />
-          <motion.button
-            type="submit"
-            whileTap={{ scale: 0.94 }}
-            disabled={query.trim().length < 2 || phase === "searching"}
-            className="rounded-xl bg-wave px-4 py-2 text-sm font-semibold text-white shadow-glow transition disabled:opacity-40"
-          >
-            {phase === "searching" ? "…" : "Search"}
-          </motion.button>
-        </div>
-        <p className="mt-2 px-1 text-[11px] text-white/30">
-          Showing full-length tracks only — short clips are filtered out.
-        </p>
-      </form>
-
-      {/* Results / skeletons */}
-      <section className="mt-3 flex-1">
-        {phase === "searching" && <ResultSkeletons />}
-
-        {phase === "results" && searchError && (
-          <p className="rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-300">
-            {searchError}
-          </p>
-        )}
-
-        {phase === "results" && !searchError && results.length === 0 && (
-          <p className="px-1 py-6 text-center text-sm text-white/40">
-            No full-length tracks found. Try a different search.
-          </p>
-        )}
-
-        <ul className="flex flex-col gap-2">
-          <AnimatePresence initial={false}>
-            {phase === "results" &&
-              results.map((r) => {
-                const isSelected =
-                  selected?.youtubeVideoId === r.youtubeVideoId;
-                return (
-                  <motion.li
-                    key={r.youtubeVideoId}
-                    layout
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                  >
-                    <motion.button
-                      whileTap={{ scale: 0.99 }}
-                      onClick={() => {
-                        setSelected(r);
-                        setSubmitError(null);
-                      }}
-                      aria-pressed={isSelected}
-                      className={`flex w-full items-center gap-3 rounded-2xl border p-2.5 text-left transition ${
-                        isSelected
-                          ? "border-wave bg-wave/10 shadow-glow"
-                          : "border-white/10 bg-ink-700/70 hover:border-wave/40 hover:bg-ink-600/60"
-                      }`}
-                    >
-                      <Thumb src={r.thumbnailUrl} alt={r.title} />
-                      <span className="min-w-0 flex-1">
-                        <span className="line-clamp-2 text-sm font-medium text-white">
-                          {r.title}
-                        </span>
-                        <span className="mt-0.5 block truncate text-xs text-white/50">
-                          {r.channelName}
-                          {r.durationSeconds
-                            ? ` · ${formatDuration(r.durationSeconds)}`
-                            : ""}
-                        </span>
-                      </span>
-                      {isSelected && (
-                        <span className="shrink-0 rounded-full bg-wave px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
-                          Selected
-                        </span>
-                      )}
-                    </motion.button>
-                  </motion.li>
-                );
-              })}
-          </AnimatePresence>
-        </ul>
-      </section>
-
-      {/* Crowd pending — upvote songs others requested */}
-      <section className="mt-8">
-        <h2 className="mb-2 px-1 font-display text-sm font-semibold uppercase tracking-wide text-white/40">
-          Pending requests{" "}
-          <span className="text-white/25">{crowd.length}</span>
-        </h2>
-        <p className="mb-3 px-1 text-xs text-white/35">
-          Upvote songs you also want — helps the DJ prioritize. Does not
-          auto-approve.
-        </p>
-        <ul className="flex flex-col gap-2">
-          <AnimatePresence initial={false}>
-            {crowd.map((r) => (
-              <motion.li
-                key={r.id}
-                layout
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="flex items-center gap-3 rounded-2xl border border-white/5 bg-surface/40 p-2.5"
+    <CinematicStage artUrl={stageArt}>
+      <main className="mx-auto flex min-h-[100dvh] w-full max-w-lg flex-col px-4 pb-28 pt-6 sm:px-5">
+        <header className="mb-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={logoUrl}
+                  alt=""
+                  className="h-8 max-h-[40px] w-auto object-contain"
+                />
+              ) : (
+                <BrandMark size={28} showWordmark={false} />
+              )}
+              <span className="font-display text-xs font-semibold uppercase tracking-[0.24em] text-pulse">
+                ISW Wave
+              </span>
+            </div>
+            <div className="flex shrink-0 items-center gap-2 text-xs">
+              <span className="truncate text-white/40">{user.displayName}</span>
+              <button
+                onClick={logout}
+                className="rounded-full bg-white/[0.06] px-3 py-1.5 font-medium text-white/50 transition active:scale-95"
               >
-                <Thumb src={r.thumbnailUrl} alt={r.title} small />
-                <span className="min-w-0 flex-1">
-                  <span className="line-clamp-1 text-sm font-medium text-white">
-                    {r.title}
-                  </span>
-                  <span className="mt-0.5 block truncate text-xs text-white/45">
-                    {r.requesterName}
-                    {r.flagged ? " · flagged" : ""}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  disabled={voteBusy === r.id}
-                  onClick={() => toggleVote(r.id)}
-                  className={`flex flex-col items-center rounded-xl border px-2.5 py-1.5 text-xs font-bold transition active:scale-95 disabled:opacity-50 ${
-                    r.iVoted
-                      ? "border-wave bg-wave/20 text-wave-400"
-                      : "border-white/15 text-white/50 hover:border-wave/40"
-                  }`}
-                >
-                  <span>▲</span>
-                  <span>{r.voteCount}</span>
-                </button>
-              </motion.li>
-            ))}
-          </AnimatePresence>
-          {crowd.length === 0 && (
-            <li className="py-4 text-center text-sm text-white/30">
-              No pending requests yet — be the first.
-            </li>
-          )}
-        </ul>
-      </section>
+                Leave
+              </button>
+            </div>
+          </div>
+          <h1 className="mt-4 font-display text-3xl font-bold leading-tight tracking-tight text-white">
+            {eventName}
+          </h1>
+          <p className="mt-1.5 text-sm text-white/45">
+            Search a song and send it to the stage.
+          </p>
+          {queueData?.nowPlaying ? (
+            <p className="mt-3 truncate text-xs text-pulse/80">
+              Now playing · {queueData.nowPlaying.title}
+            </p>
+          ) : null}
+        </header>
 
-      {/* My requests */}
-      {mine.length > 0 && (
-        <section className="mt-8">
-          <h2 className="mb-2 px-1 font-display text-sm font-semibold uppercase tracking-wide text-white/40">
-            Your requests
-          </h2>
+        <QuotaLine used={used} limit={limit} />
+
+        <form onSubmit={onSubmitSearch} className="sticky top-3 z-10 mt-4">
+          <GlassPanel className="flex gap-2 rounded-2xl p-2 shadow-glow">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              inputMode="search"
+              enterKeyHint="search"
+              placeholder="Search for a song…"
+              className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-base text-white placeholder:text-white/30 focus:outline-none"
+              aria-label="Search for a song"
+            />
+            <motion.button
+              type="submit"
+              whileTap={{ scale: 0.94 }}
+              disabled={query.trim().length < 2 || phase === "searching"}
+              className="rounded-xl bg-pulse px-4 py-2 text-sm font-semibold text-ink shadow-[0_0_24px_-4px_rgba(34,211,238,0.55)] transition disabled:opacity-40"
+            >
+              {phase === "searching" ? "…" : "Search"}
+            </motion.button>
+          </GlassPanel>
+          <p className="mt-2 px-1 text-[11px] text-white/28">
+            Showing full-length tracks only — short clips are filtered out.
+          </p>
+        </form>
+
+        <section className="mt-4 flex-1">
+          {phase === "searching" && <ResultSkeletons />}
+
+          {phase === "results" && searchError && (
+            <p className="rounded-2xl bg-red-500/10 px-4 py-3 text-sm text-red-300">
+              {searchError}
+            </p>
+          )}
+
+          {phase === "results" && !searchError && results.length === 0 && (
+            <p className="px-1 py-6 text-center text-sm text-white/40">
+              No full-length tracks found. Try a different search.
+            </p>
+          )}
+
           <ul className="flex flex-col gap-2">
             <AnimatePresence initial={false}>
-              {mine.map((r) => (
+              {phase === "results" &&
+                results.map((r) => {
+                  const isSelected =
+                    selected?.youtubeVideoId === r.youtubeVideoId;
+                  return (
+                    <motion.li
+                      key={r.youtubeVideoId}
+                      layout
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                    >
+                      <motion.button
+                        whileTap={{ scale: 0.99 }}
+                        onClick={() => {
+                          setSelected(r);
+                          setSubmitError(null);
+                        }}
+                        aria-pressed={isSelected}
+                        className={`glass-edge flex w-full items-center gap-3 rounded-2xl p-2.5 text-left transition ${
+                          isSelected
+                            ? "bg-pulse/10 shadow-[0_0_32px_-8px_rgba(34,211,238,0.45)]"
+                            : "hover:bg-white/[0.06]"
+                        }`}
+                      >
+                        <Thumb src={r.thumbnailUrl} alt={r.title} />
+                        <span className="min-w-0 flex-1">
+                          <span className="line-clamp-2 text-sm font-medium text-white">
+                            {r.title}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-white/45">
+                            {r.channelName}
+                            {r.durationSeconds
+                              ? ` · ${formatDuration(r.durationSeconds)}`
+                              : ""}
+                          </span>
+                        </span>
+                        {isSelected && (
+                          <span className="shrink-0 rounded-full bg-pulse px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-ink">
+                            Selected
+                          </span>
+                        )}
+                      </motion.button>
+                    </motion.li>
+                  );
+                })}
+            </AnimatePresence>
+          </ul>
+        </section>
+
+        <section className="mt-8">
+          <h2 className="mb-2 px-1 font-display text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
+            Pending requests{" "}
+            <span className="text-white/25">{crowd.length}</span>
+          </h2>
+          <p className="mb-3 px-1 text-xs text-white/35">
+            Upvote songs you also want — helps the DJ prioritize. Does not
+            auto-approve.
+          </p>
+          <ul className="flex flex-col gap-2">
+            <AnimatePresence initial={false}>
+              {crowd.map((r) => (
                 <motion.li
                   key={r.id}
                   layout
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  className="flex items-center gap-3 rounded-2xl border border-white/5 bg-surface/40 p-2.5"
+                  className="glass-edge flex items-center gap-3 rounded-2xl p-2.5"
                 >
                   <Thumb src={r.thumbnailUrl} alt={r.title} small />
                   <span className="min-w-0 flex-1">
                     <span className="line-clamp-1 text-sm font-medium text-white">
                       {r.title}
                     </span>
-                    <span className="mt-1 block">
-                      <StatusBadge status={r.status} />
-                      {r.flagged && (
-                        <span className="ml-2 text-[10px] font-semibold uppercase text-amber-300">
-                          Flagged
-                        </span>
-                      )}
+                    <span className="mt-0.5 block truncate text-xs text-white/40">
+                      {r.requesterName}
+                      {r.flagged ? " · flagged" : ""}
                     </span>
                   </span>
+                  <button
+                    type="button"
+                    disabled={voteBusy === r.id}
+                    onClick={() => toggleVote(r.id)}
+                    className={`flex flex-col items-center rounded-xl px-2.5 py-1.5 text-xs font-bold transition active:scale-95 disabled:opacity-50 ${
+                      r.iVoted
+                        ? "bg-pulse/20 text-pulse"
+                        : "bg-white/[0.06] text-white/45 hover:text-pulse"
+                    }`}
+                  >
+                    <span>▲</span>
+                    <span>{r.voteCount}</span>
+                  </button>
                 </motion.li>
               ))}
             </AnimatePresence>
+            {crowd.length === 0 && (
+              <li className="py-4 text-center text-sm text-white/30">
+                No pending requests yet — be the first.
+              </li>
+            )}
           </ul>
         </section>
-      )}
 
-      {/* Confirm sheet */}
-      <ConfirmSheet
-        selected={selected}
-        displayName={user.displayName}
-        submitting={submitting}
-        atLimit={atLimit}
-        error={submitError}
-        onClose={() => setSelected(null)}
-        onConfirm={submitRequest}
-      />
+        {mine.length > 0 && (
+          <section className="mt-8">
+            <h2 className="mb-2 px-1 font-display text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
+              Your requests
+            </h2>
+            <ul className="flex flex-col gap-2">
+              <AnimatePresence initial={false}>
+                {mine.map((r) => (
+                  <motion.li
+                    key={r.id}
+                    layout
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="glass-edge flex items-center gap-3 rounded-2xl p-2.5"
+                  >
+                    <Thumb src={r.thumbnailUrl} alt={r.title} small />
+                    <span className="min-w-0 flex-1">
+                      <span className="line-clamp-1 text-sm font-medium text-white">
+                        {r.title}
+                      </span>
+                      <span className="mt-1 block">
+                        <StatusBadge status={r.status} />
+                        {r.flagged && (
+                          <span className="ml-2 text-[10px] font-semibold uppercase text-amber-300">
+                            Flagged
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                  </motion.li>
+                ))}
+              </AnimatePresence>
+            </ul>
+          </section>
+        )}
 
-      {/* Success burst */}
-      <AnimatePresence>{justSubmitted && <SuccessBurst />}</AnimatePresence>
-    </main>
-    </EventTheme>
+        <ConfirmSheet
+          selected={selected}
+          displayName={user.displayName}
+          submitting={submitting}
+          atLimit={atLimit}
+          error={submitError}
+          onClose={() => setSelected(null)}
+          onConfirm={submitRequest}
+        />
+
+        <AnimatePresence>{justSubmitted && <SuccessBurst />}</AnimatePresence>
+      </main>
+    </CinematicStage>
   );
 }
-
-// --- Pieces ---------------------------------------------------------------
 
 function QuotaLine({ used, limit }: { used: number; limit: number }) {
   if (limit <= 0) return null;
   const remaining = Math.max(0, limit - used);
   return (
-    <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-surface/50 px-4 py-3">
+    <GlassPanel className="flex items-center justify-between rounded-2xl px-4 py-3.5">
       <div>
         <p className="text-sm font-semibold text-white">
           {used} of {limit} requests used
         </p>
-        <p className="mt-0.5 text-xs text-white/45">
+        <p className="mt-0.5 text-xs text-white/40">
           {remaining > 0
             ? `${remaining} more slot${remaining === 1 ? "" : "s"} — frees up as your songs play.`
             : "Limit reached — a slot frees up when one of your songs plays."}
         </p>
       </div>
-      {/* Dot meter of the allowance. */}
       <div className="flex shrink-0 items-center gap-1.5">
         {Array.from({ length: limit }).map((_, i) => (
           <span
             key={i}
             className={`h-2.5 w-2.5 rounded-full ${
-              i < used ? "bg-wave" : "bg-white/15"
+              i < used ? "bg-pulse" : "bg-white/15"
             }`}
           />
         ))}
       </div>
-    </div>
-  );
-}
-
-function WaveMark() {
-  return (
-    <span className="inline-flex h-6 items-end gap-[3px] text-wave">
-      <span className="w-[3px] rounded-full bg-current animate-eq-1" style={{ height: "60%" }} />
-      <span className="w-[3px] rounded-full bg-current animate-eq-2" style={{ height: "100%" }} />
-      <span className="w-[3px] rounded-full bg-current animate-eq-3" style={{ height: "45%" }} />
-    </span>
+    </GlassPanel>
   );
 }
 
@@ -511,11 +502,10 @@ function Thumb({
 }) {
   return (
     <span
-      className={`relative shrink-0 overflow-hidden rounded-lg bg-white/5 ${
-        small ? "h-11 w-11" : "h-14 w-20"
+      className={`relative shrink-0 overflow-hidden rounded-xl bg-white/5 shadow-md ${
+        small ? "h-11 w-11" : "h-14 w-14"
       }`}
     >
-      {/* Plain img: thumbnails are remote YouTube URLs; avoids next/image config. */}
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt={alt} className="h-full w-full object-cover" />
@@ -530,9 +520,9 @@ function ResultSkeletons() {
       {Array.from({ length: 6 }).map((_, i) => (
         <li
           key={i}
-          className="flex items-center gap-3 rounded-2xl border border-white/10 bg-ink-700/70 p-2.5"
+          className="glass-edge flex items-center gap-3 rounded-2xl p-2.5"
         >
-          <span className="skeleton h-14 w-20 rounded-lg" />
+          <span className="skeleton h-14 w-14 rounded-xl" />
           <span className="flex-1">
             <span className="skeleton mb-2 block h-3.5 w-3/4 rounded" />
             <span className="skeleton block h-3 w-1/3 rounded" />
@@ -565,14 +555,14 @@ function ConfirmSheet({
       {selected && (
         <>
           <motion.div
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-40 bg-black/65 backdrop-blur-md"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
           />
           <motion.div
-            className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md rounded-t-3xl border-t border-white/10 bg-ink-800 p-5 pb-8 shadow-glow-lg"
+            className="glass-edge fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-lg rounded-t-[2rem] p-5 pb-8 shadow-glow-lg"
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
@@ -594,7 +584,7 @@ function ConfirmSheet({
               </div>
             </div>
 
-            <p className="mt-5 rounded-xl border border-white/10 bg-surface/60 px-4 py-3 text-sm text-white/70">
+            <p className="mt-5 rounded-2xl bg-white/[0.04] px-4 py-3 text-sm text-white/65">
               Requesting as{" "}
               <span className="font-semibold text-white">{displayName}</span>
             </p>
@@ -610,7 +600,7 @@ function ConfirmSheet({
             <div className="mt-5 flex gap-3">
               <button
                 onClick={onClose}
-                className="flex-1 rounded-xl border border-white/10 py-3 text-sm font-semibold text-white/70 transition active:scale-[0.98]"
+                className="flex-1 rounded-xl bg-white/[0.06] py-3 text-sm font-semibold text-white/65 transition active:scale-[0.98]"
               >
                 Cancel
               </button>
@@ -618,7 +608,7 @@ function ConfirmSheet({
                 whileTap={{ scale: 0.96 }}
                 onClick={onConfirm}
                 disabled={submitting}
-                className="flex-[1.6] rounded-xl bg-wave py-3 text-sm font-bold text-white shadow-glow transition disabled:opacity-60"
+                className="flex-[1.6] rounded-xl bg-pulse py-3 text-sm font-bold text-ink shadow-[0_0_28px_-4px_rgba(34,211,238,0.55)] transition disabled:opacity-60"
               >
                 {submitting ? "Sending…" : "Request this song"}
               </motion.button>
@@ -643,15 +633,15 @@ function SuccessBurst() {
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 1.4, opacity: 0 }}
         transition={{ type: "spring", damping: 12, stiffness: 200 }}
-        className="flex flex-col items-center gap-3 rounded-3xl border border-wave/30 bg-ink-800/90 px-8 py-7 shadow-glow-lg backdrop-blur"
+        className="glass-edge flex flex-col items-center gap-3 rounded-3xl px-8 py-7 shadow-glow-lg"
       >
-        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-wave text-2xl">
+        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-pulse text-2xl text-ink">
           ✓
         </span>
         <span className="font-display text-lg font-bold text-white">
           Request sent!
         </span>
-        <span className="text-xs text-white/50">Watch for it in the queue.</span>
+        <span className="text-xs text-white/45">Watch for it in the queue.</span>
       </motion.div>
     </motion.div>
   );

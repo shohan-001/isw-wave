@@ -1,7 +1,7 @@
 import type { Config } from "tailwindcss";
 
-// wave / glow read --accent-rgb from EventTheme so per-event colors apply
- // without rewriting every component. Defaults match the original magenta.
+// wave / glow read --accent-rgb (public cinematic cyan by default;
+// admin EventTheme can still override per-event accents).
 const config: Config = {
   darkMode: "class",
   content: [
@@ -13,14 +13,14 @@ const config: Config = {
     extend: {
       colors: {
         ink: {
-          DEFAULT: "#0b0a12",
-          800: "#12101d",
-          700: "#1a1728",
-          600: "#241f36",
+          DEFAULT: "#07080c",
+          800: "#0c0e14",
+          700: "#12151e",
+          600: "#1a1f2b",
         },
         surface: {
-          DEFAULT: "#16131f",
-          raised: "#1f1a2e",
+          DEFAULT: "#10141c",
+          raised: "#161c28",
         },
         wave: {
           DEFAULT: "rgb(var(--accent-rgb) / <alpha-value>)",
