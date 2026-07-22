@@ -2,6 +2,7 @@ import { DisplayClient } from "./DisplayClient";
 import { normalizeAccessCode } from "@/lib/auth";
 import { getEventByAccessCode, getEventById } from "@/lib/queries";
 import { getCurrentUser } from "@/lib/auth";
+import { getPublicBaseUrl } from "@/lib/public-url";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -11,8 +12,7 @@ export default async function DisplayPage({
 }: {
   searchParams?: { code?: string; eventId?: string };
 }) {
-  const baseUrl =
-    process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+  const baseUrl = getPublicBaseUrl();
 
   const accessCode = searchParams?.code
     ? normalizeAccessCode(searchParams.code)
@@ -37,9 +37,7 @@ export default async function DisplayPage({
     redirect("/login?mode=admin");
   }
 
-  const joinUrl = `${baseUrl.replace(/\/$/, "")}/login?code=${encodeURIComponent(
-    event.accessCode
-  )}`;
+  const joinUrl = `${baseUrl}/login?code=${encodeURIComponent(event.accessCode)}`;
 
   return (
     <DisplayClient
