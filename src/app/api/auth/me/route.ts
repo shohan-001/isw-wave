@@ -16,6 +16,7 @@ export async function GET() {
           username: session.username,
           email: session.email,
           eventId: session.eventId,
+          eventSlug: session.eventSlug,
           isAdmin: true,
         }
       : {
@@ -23,6 +24,7 @@ export async function GET() {
           id: session.id,
           displayName: session.displayName,
           eventId: session.eventId,
+          eventSlug: session.eventSlug,
           isAdmin: false,
         };
 

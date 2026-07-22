@@ -7,6 +7,7 @@ export type AuthUser =
       username: string;
       email: string;
       eventId: string;
+      eventSlug: string;
       isAdmin: true;
     }
   | {
@@ -14,6 +15,7 @@ export type AuthUser =
       id: string;
       displayName: string;
       eventId: string;
+      eventSlug: string;
       isAdmin: false;
     };
 
@@ -68,6 +70,14 @@ export type EventStats = {
   queueLength: number;
   mostActiveRequester: string | null;
   mostActiveCount: number;
+};
+
+export type QuotaInfo = {
+  dayKey: string;
+  unitsUsed: number;
+  limit: number;
+  remaining: number;
+  percentUsed: number;
 };
 
 export type FallbackTrack = {

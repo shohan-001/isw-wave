@@ -11,6 +11,10 @@ export async function getEventByAccessCode(code: string) {
   return prisma.event.findUnique({ where: { accessCode: code } });
 }
 
+export async function getEventBySlug(slug: string) {
+  return prisma.event.findUnique({ where: { slug } });
+}
+
 export async function requireEventById(eventId: string) {
   const event = await getEventById(eventId);
   if (!event) throw new Error(`Event not found: ${eventId}`);

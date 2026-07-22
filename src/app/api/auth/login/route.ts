@@ -6,6 +6,7 @@ import {
   verifyPassword,
   signAuthToken,
   authCookieOptions,
+  setAdminSession,
 } from "@/lib/auth";
 import type { AuthUser } from "@/lib/types";
 
@@ -54,30 +55,26 @@ export async function POST(req: Request) {
     const event = await prisma.event.findFirst({
       where: { adminId: user.id },
       orderBy: { createdAt: "asc" },
-      select: { id: true },
+      select: { id: true, slug: true },
     });
-    if (!event) {
-      return NextResponse.json(
-        {
-          error:
-            "No event is linked to this admin. Re-run: TURSO_… npm run db:seed",
-        },
-        { status: 500 }
+
+    if (event) {
+      await setAdminSession(user.id, event.id);
+    } else {
+      cookies().set(
+        AUTH_COOKIE,
+        signAuthToken("admin", user.id),
+        authCookieOptions()
       );
     }
-
-    cookies().set(
-      AUTH_COOKIE,
-      signAuthToken("admin", user.id),
-      authCookieOptions()
-    );
 
     const authUser: AuthUser = {
       role: "admin",
       id: user.id,
       username: user.username,
       email: user.email,
-      eventId: event.id,
+      eventId: event?.id ?? "",
+      eventSlug: event?.slug ?? "",
       isAdmin: true,
     };
     return NextResponse.json({ user: authUser });

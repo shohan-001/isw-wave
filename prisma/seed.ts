@@ -13,6 +13,7 @@ const adapter = new PrismaLibSQL({
 const prisma = new PrismaClient({ adapter });
 
 const EVENT_ID = "isw-wave-main-event";
+const EVENT_SLUG = "isw-wave-main";
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function generateAccessCode(length = 6): string {
@@ -48,17 +49,30 @@ async function main() {
     );
   }
 
-  // Ensure a unique access code for the seeded event.
+  const org = await prisma.organization.upsert({
+    where: { ownerId: admin.id },
+    update: { name: "ISW Wave" },
+    create: { name: "ISW Wave", ownerId: admin.id },
+  });
+  console.log(`Seeded organization "${org.name}" (${org.id}).`);
+
   const existing = await prisma.event.findUnique({ where: { id: EVENT_ID } });
   const accessCode = existing?.accessCode || generateAccessCode();
 
   await prisma.event.upsert({
     where: { id: EVENT_ID },
-    update: { adminId: admin.id, name: "ISW Wave — Live Requests" },
+    update: {
+      adminId: admin.id,
+      organizationId: org.id,
+      slug: EVENT_SLUG,
+      name: "ISW Wave — Live Requests",
+    },
     create: {
       id: EVENT_ID,
       name: "ISW Wave — Live Requests",
+      slug: EVENT_SLUG,
       accessCode,
+      organizationId: org.id,
       adminId: admin.id,
       requestLimit: 3,
       approvalMode: "manual",
@@ -66,9 +80,9 @@ async function main() {
   });
 
   const event = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_ID } });
-  console.log(
-    `Seeded event "${event.id}" with access code: ${event.accessCode}`
-  );
+  console.log(`Seeded event "${event.name}"`);
+  console.log(`  → Slug URL: /e/${event.slug}`);
+  console.log(`  → Access code: ${event.accessCode}`);
 }
 
 main()

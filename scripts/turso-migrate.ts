@@ -89,6 +89,9 @@ async function resetSchema(client: Client) {
     "Request",
     "Participant",
     "Event",
+    "Organization",
+    "SearchCache",
+    "YouTubeQuotaDay",
     "User",
     "_prisma_migrations",
   ]) {
@@ -109,10 +112,21 @@ async function applyFinalSchema(client: Client) {
     )`,
     `CREATE UNIQUE INDEX "User_username_key" ON "User"("username")`,
     `CREATE UNIQUE INDEX "User_email_key" ON "User"("email")`,
+    `CREATE TABLE "Organization" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "name" TEXT NOT NULL,
+      "ownerId" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL,
+      CONSTRAINT "Organization_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+    )`,
+    `CREATE UNIQUE INDEX "Organization_ownerId_key" ON "Organization"("ownerId")`,
     `CREATE TABLE "Event" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "name" TEXT NOT NULL,
+      "slug" TEXT NOT NULL,
       "accessCode" TEXT NOT NULL,
+      "organizationId" TEXT NOT NULL,
       "adminId" TEXT NOT NULL,
       "requestLimit" INTEGER NOT NULL DEFAULT 3,
       "approvalMode" TEXT NOT NULL DEFAULT 'manual',
@@ -125,11 +139,14 @@ async function applyFinalSchema(client: Client) {
       "currentRequestId" TEXT,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL,
+      CONSTRAINT "Event_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
       CONSTRAINT "Event_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
     )`,
+    `CREATE UNIQUE INDEX "Event_slug_key" ON "Event"("slug")`,
     `CREATE UNIQUE INDEX "Event_accessCode_key" ON "Event"("accessCode")`,
     `CREATE UNIQUE INDEX "Event_currentRequestId_key" ON "Event"("currentRequestId")`,
     `CREATE INDEX "Event_adminId_idx" ON "Event"("adminId")`,
+    `CREATE INDEX "Event_organizationId_idx" ON "Event"("organizationId")`,
     `CREATE TABLE "Participant" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "eventId" TEXT NOT NULL,
@@ -187,6 +204,20 @@ async function applyFinalSchema(client: Client) {
       CONSTRAINT "FallbackTrack_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event" ("id") ON DELETE CASCADE ON UPDATE CASCADE
     )`,
     `CREATE INDEX "FallbackTrack_eventId_position_idx" ON "FallbackTrack"("eventId", "position")`,
+    `CREATE TABLE "SearchCache" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "queryKey" TEXT NOT NULL,
+      "results" TEXT NOT NULL,
+      "expiresAt" DATETIME NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE UNIQUE INDEX "SearchCache_queryKey_key" ON "SearchCache"("queryKey")`,
+    `CREATE INDEX "SearchCache_expiresAt_idx" ON "SearchCache"("expiresAt")`,
+    `CREATE TABLE "YouTubeQuotaDay" (
+      "dayKey" TEXT NOT NULL PRIMARY KEY,
+      "unitsUsed" INTEGER NOT NULL DEFAULT 0,
+      "updatedAt" DATETIME NOT NULL
+    )`,
   ];
 
   for (const statement of statements) {
@@ -272,7 +303,7 @@ async function main() {
   if (reset) {
     await resetSchema(client);
     await applyFinalSchema(client);
-    console.log("Turso schema reset to current Phase 2 model.");
+    console.log("Turso schema reset to current Phase 5 model.");
   } else {
     await applyPending(client);
     console.log("Turso migrations complete.");

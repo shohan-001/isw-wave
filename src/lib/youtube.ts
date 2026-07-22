@@ -7,6 +7,12 @@ import { MIN_SONG_SECONDS } from "./constants";
 // call happens here, behind /api/search.
 //
 // Quota note: search.list costs 100 units against the 10,000/day free quota.
+//
+// Phase 5: identical searches are cached in the DB (see youtube-cache.ts) and
+// daily usage is tracked (youtube-quota.ts). At higher scale, the real fix is
+// either a Google API quota increase or per-organizer API keys — not implemented.
+//
+// Phase 6+ consideration: native admin apps remain out of scope; web admin only.
 // The client enforces a 500ms debounce AND an explicit Search button so typing
 // can't drain the quota. search.list does not return video duration, so we make
 // one extra videos.list call (contentDetails, 1 unit) to fetch durations.

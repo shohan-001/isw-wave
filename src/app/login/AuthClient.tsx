@@ -79,6 +79,7 @@ export function AuthClient({
           user?: AuthUser;
           error?: string;
           lockedName?: string;
+          eventSlug?: string;
         }>(res);
 
         if (!res.ok || !data?.user) {
@@ -112,7 +113,10 @@ export function AuthClient({
         } catch {
           /* ignore */
         }
-        window.location.href = "/";
+        window.location.href =
+          data.user.role === "participant" && data.user.eventSlug
+            ? `/e/${data.user.eventSlug}`
+            : "/";
         return;
       }
 
@@ -133,7 +137,7 @@ export function AuthClient({
         setBusy(false);
         return;
       }
-      window.location.href = data.user.isAdmin ? "/admin" : "/";
+      window.location.href = data.user.eventId ? "/admin" : "/organizer/events/new";
     } catch {
       setError("Network error. Check your connection and try again.");
       setBusy(false);
@@ -285,7 +289,16 @@ export function AuthClient({
         </div>
 
         <p className="mt-4 text-center text-xs text-white/30">
-          No account needed for guests — just a name and the event code.
+          {mode === "join" ? (
+            <>No account needed for guests — just a name and the event code.</>
+          ) : (
+            <>
+              New organizer?{" "}
+              <a href="/organizer/signup" className="text-wave-400 hover:underline">
+                Create an account
+              </a>
+            </>
+          )}
         </p>
       </motion.div>
     </main>

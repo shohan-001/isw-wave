@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
+import { getCachedSearch, setCachedSearch } from "@/lib/youtube-cache";
+import {
+  canAffordSearch,
+  getQuotaUsage,
+  recordQuotaUnits,
+  SEARCH_FLOW_COST,
+} from "@/lib/youtube-quota";
 import { searchYouTube } from "@/lib/youtube";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/search?q=...
-// Proxies YouTube Data API v3 search server-side so YOUTUBE_API_KEY is never
-// exposed to the client. The client throttles calls (500ms debounce + explicit
-// Search button) to protect the daily quota — see the request page.
+// Server-side YouTube search with DB cache (15 min) and daily quota tracking.
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const q = (searchParams.get("q") || "").trim();
@@ -16,12 +21,48 @@ export async function GET(req: Request) {
   }
 
   try {
+    const cached = await getCachedSearch(q);
+    if (cached) {
+      const quota = await getQuotaUsage();
+      return NextResponse.json({ results: cached, cached: true, quota });
+    }
+
+    if (!(await canAffordSearch())) {
+      const quota = await getQuotaUsage();
+      return NextResponse.json(
+        {
+          error:
+            "Search is temporarily limited — we've hit today's YouTube API quota. Try again in a few hours.",
+          quotaLimited: true,
+          quota,
+        },
+        { status: 429 }
+      );
+    }
+
     const results = await searchYouTube(q, 10);
-    return NextResponse.json({ results });
+    await recordQuotaUnits(SEARCH_FLOW_COST);
+    await setCachedSearch(q, results);
+
+    const quota = await getQuotaUsage();
+    return NextResponse.json({ results, cached: false, quota });
   } catch (err) {
     const message = err instanceof Error ? err.message : "search failed";
-    // Surface a clean error; log the detail server-side.
     console.error("[/api/search]", message);
+
+    if (/quotaExceeded|dailyLimitExceeded|403/.test(message)) {
+      const quota = await getQuotaUsage();
+      return NextResponse.json(
+        {
+          error:
+            "Search is temporarily limited — YouTube API quota exhausted. Try again shortly.",
+          quotaLimited: true,
+          quota,
+        },
+        { status: 429 }
+      );
+    }
+
     const isKey = message.includes("YOUTUBE_API_KEY");
     return NextResponse.json(
       {

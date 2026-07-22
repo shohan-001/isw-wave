@@ -14,6 +14,7 @@ import {
   type EventStats,
   type FallbackTrack,
   type PublicRequest,
+  type QuotaInfo,
   type Settings,
 } from "@/lib/types";
 import {
@@ -28,11 +29,11 @@ type QueueSort = "position" | "time" | "requester";
 
 export function AdminDashboard({
   eventId,
-  initialAccessCode,
+  eventSlug,
   initialAccent,
 }: {
   eventId: string;
-  initialAccessCode: string;
+  eventSlug: string;
   initialAccent?: string;
 }) {
   const { data, realtime } = useQueuePolling(5000, { eventId });
@@ -44,6 +45,7 @@ export function AdminDashboard({
   const [queueSort, setQueueSort] = useState<QueueSort>("position");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [stats, setStats] = useState<EventStats | null>(null);
+  const [quota, setQuota] = useState<QuotaInfo | null>(null);
   const [fallback, setFallback] = useState<FallbackTrack[]>([]);
   const [fallbackIndex, setFallbackIndex] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -99,12 +101,21 @@ export function AdminDashboard({
     }
   }, []);
 
+  const loadQuota = useCallback(async () => {
+    const res = await fetch("/api/quota", { cache: "no-store" });
+    if (res.ok) {
+      const d = (await res.json()) as { quota: QuotaInfo };
+      setQuota(d.quota);
+    }
+  }, []);
+
   useEffect(() => {
     loadPending();
     loadSettings();
     loadFallback();
     loadStats();
-  }, [loadPending, loadSettings, loadFallback, loadStats]);
+    loadQuota();
+  }, [loadPending, loadSettings, loadFallback, loadStats, loadQuota]);
 
   // Slow poll only when Pusher isn't configured.
   useEffect(() => {
@@ -113,11 +124,14 @@ export function AdminDashboard({
     return () => clearInterval(t);
   }, [loadPending]);
 
-  // Stats refresh every 10s.
+  // Stats + quota refresh every 10s.
   useEffect(() => {
-    const t = setInterval(loadStats, 10000);
+    const t = setInterval(() => {
+      void loadStats();
+      void loadQuota();
+    }, 10000);
     return () => clearInterval(t);
-  }, [loadStats]);
+  }, [loadStats, loadQuota]);
 
   useEventRealtime(eventId, {
     "pending:update": () => {
@@ -349,8 +363,7 @@ export function AdminDashboard({
     return copy;
   }, [queue, queueSort]);
 
-  const accessCode = settings?.accessCode ?? initialAccessCode;
-  const displayHref = `/display?code=${encodeURIComponent(accessCode)}`;
+  const displayHref = `/e/${eventSlug}/display`;
   const accent =
     settings?.accentColor ||
     normalizeHex(initialAccent || "") ||
@@ -395,6 +408,12 @@ export function AdminDashboard({
               Shortcuts: A approve · R reject · N next
             </p>
             <a
+              href="/organizer"
+              className="rounded-xl border border-white/10 px-4 py-2 text-sm font-medium text-white/70 transition hover:border-pulse/40"
+            >
+              All events
+            </a>
+            <a
               href={displayHref}
               target="_blank"
               className="rounded-xl border border-white/10 px-4 py-2 text-sm font-medium text-white/70 transition hover:border-pulse/40"
@@ -411,7 +430,7 @@ export function AdminDashboard({
         </div>
 
         {stats && (
-          <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             <StatChip label="Total" value={String(stats.totalRequests)} />
             <StatChip label="Approved" value={String(stats.approved)} />
             <StatChip label="Rejected" value={String(stats.rejected)} />
@@ -425,6 +444,17 @@ export function AdminDashboard({
               }
               className="col-span-2 sm:col-span-1"
             />
+            {quota ? (
+              <StatChip
+                label="YouTube quota"
+                value={`${quota.percentUsed}%`}
+                className={
+                  quota.percentUsed >= 85
+                    ? "border-amber-500/40 text-amber-200"
+                    : undefined
+                }
+              />
+            ) : null}
           </div>
         )}
 
@@ -876,6 +906,12 @@ export function AdminDashboard({
 
                 <div className="mb-4 rounded-2xl border border-wave/30 bg-wave/10 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-wave-400">
+                    Event URL
+                  </p>
+                  <p className="mt-1 font-mono text-sm text-white/80">
+                    /e/{eventSlug}
+                  </p>
+                  <p className="mt-3 text-xs font-medium uppercase tracking-wide text-wave-400">
                     Event code
                   </p>
                   <p className="mt-1 font-display text-3xl font-bold tracking-[0.2em] text-white">

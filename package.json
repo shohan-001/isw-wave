@@ -11,7 +11,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force",
     "db:deploy": "prisma migrate deploy",
-    "db:turso": "tsx scripts/turso-migrate.ts"
+    "db:turso": "tsx scripts/turso-migrate.ts",
+    "db:migrate-phase5": "tsx scripts/migrate-phase5-data.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

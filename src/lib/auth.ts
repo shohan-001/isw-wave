@@ -5,14 +5,12 @@ import { cookies } from "next/headers";
 import { prisma } from "./db";
 import { AUTH_COOKIE } from "./constants";
 
-// --- Phase 2 auth -----------------------------------------------------------
+// --- Phase 2/5 auth ------------------------------------------------------------
 //
- // Two session kinds share one signed cookie (`isw_auth`):
- //   a.<userId>.<sig>          — admin (password login)
- //   p.<participantId>.<sig>   — attendee (name + event access code)
- //
- // Attendees never create email/password accounts. Admins are seeded Users.
- // Device lock: a deviceId may only ever use one displayName (see /api/auth/join).
+// Signed cookie (`isw_auth`):
+//   admin.{userId}.{eventId}.{sig}  — admin (password login, active event)
+//   admin.{userId}.{sig}            — legacy admin token (first event fallback)
+//   participant.{participantId}.{sig} — attendee (name + event access code)
 
 const SECRET = process.env.SESSION_SECRET || "dev-secret-change-me";
 const BCRYPT_ROUNDS = 10;
@@ -23,6 +21,7 @@ export type AdminSession = {
   username: string;
   email: string;
   eventId: string;
+  eventSlug: string;
   isAdmin: true;
 };
 
@@ -31,12 +30,12 @@ export type ParticipantSession = {
   id: string;
   displayName: string;
   eventId: string;
+  eventSlug: string;
   isAdmin: false;
 };
 
 export type SessionUser = AdminSession | ParticipantSession;
 
-// --- Password hashing (admins only) ---
 export async function hashPassword(plain: string): Promise<string> {
   return bcrypt.hash(plain, BCRYPT_ROUNDS);
 }
@@ -48,8 +47,6 @@ export async function verifyPassword(
   return bcrypt.compare(plain, hash);
 }
 
-// --- Access codes (shown on display / typed at join) ---
-// Avoid ambiguous chars (0/O, 1/I) so codes read cleanly on a projector.
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 export function generateAccessCode(length = 6): string {
@@ -64,37 +61,51 @@ export function normalizeAccessCode(raw: string): string {
   return raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
-// --- Signed auth token ---
 function sign(value: string): string {
   return crypto.createHmac("sha256", SECRET).update(value).digest("hex");
 }
 
+function verifySig(payload: string, sig: string): boolean {
+  const expected = sign(payload);
+  if (sig.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+}
+
 export function signAuthToken(
   role: "admin" | "participant",
-  id: string
+  id: string,
+  eventId?: string
 ): string {
-  const payload = `${role}.${id}`;
+  const payload =
+    role === "admin" && eventId ? `admin.${id}.${eventId}` : `${role}.${id}`;
   return `${payload}.${sign(payload)}`;
 }
 
-export function verifyAuthToken(
-  token: string | undefined
-): { role: "admin" | "participant"; id: string } | null {
+export type ParsedAuthToken = {
+  role: "admin" | "participant";
+  id: string;
+  eventId?: string;
+};
+
+export function verifyAuthToken(token: string | undefined): ParsedAuthToken | null {
   if (!token) return null;
-  // token = role.id.sig  (id is a cuid — no dots; role is a|participant word)
   const parts = token.split(".");
+  if (parts.length < 3) return null;
+
+  if (parts[0] === "admin" && parts.length === 4) {
+    const [, userId, eventId, sig] = parts;
+    if (!userId || !eventId || !sig) return null;
+    const payload = `admin.${userId}.${eventId}`;
+    if (!verifySig(payload, sig)) return null;
+    return { role: "admin", id: userId, eventId };
+  }
+
   if (parts.length !== 3) return null;
   const [role, id, sig] = parts;
   if (role !== "admin" && role !== "participant") return null;
   if (!id || !sig) return null;
   const payload = `${role}.${id}`;
-  const expected = sign(payload);
-  if (
-    sig.length !== expected.length ||
-    !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))
-  ) {
-    return null;
-  }
+  if (!verifySig(payload, sig)) return null;
   return { role, id };
 }
 
@@ -104,11 +115,28 @@ export function authCookieOptions() {
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 24 * 30, // 30 days
+    maxAge: 60 * 60 * 24 * 30,
   };
 }
 
-// --- Current-session resolution ---
+async function resolveAdminEvent(
+  userId: string,
+  preferredEventId?: string
+): Promise<{ id: string; slug: string } | null> {
+  if (preferredEventId) {
+    const owned = await prisma.event.findFirst({
+      where: { id: preferredEventId, adminId: userId },
+      select: { id: true, slug: true },
+    });
+    if (owned) return owned;
+  }
+  return prisma.event.findFirst({
+    where: { adminId: userId },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, slug: true },
+  });
+}
+
 export async function getCurrentUser(): Promise<SessionUser | null> {
   const token = cookies().get(AUTH_COOKIE)?.value;
   const parsed = verifyAuthToken(token);
@@ -120,33 +148,37 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
       select: { id: true, username: true, email: true, isAdmin: true },
     });
     if (!user?.isAdmin) return null;
-    // Prefer the admin's first owned event (Phase 5 can pick among many).
-    const event = await prisma.event.findFirst({
-      where: { adminId: user.id },
-      orderBy: { createdAt: "asc" },
-      select: { id: true },
-    });
-    if (!event) return null;
+
+    const event = await resolveAdminEvent(user.id, parsed.eventId);
+
     return {
       role: "admin",
       id: user.id,
       username: user.username,
       email: user.email,
-      eventId: event.id,
+      eventId: event?.id ?? "",
+      eventSlug: event?.slug ?? "",
       isAdmin: true,
     };
   }
 
   const participant = await prisma.participant.findUnique({
     where: { id: parsed.id },
-    select: { id: true, displayName: true, eventId: true },
+    select: {
+      id: true,
+      displayName: true,
+      eventId: true,
+      event: { select: { slug: true } },
+    },
   });
   if (!participant) return null;
+
   return {
     role: "participant",
     id: participant.id,
     displayName: participant.displayName,
     eventId: participant.eventId,
+    eventSlug: participant.event.slug,
     isAdmin: false,
   };
 }
@@ -163,4 +195,23 @@ export async function requireAdmin(): Promise<AdminSession | null> {
 export async function requireParticipant(): Promise<ParticipantSession | null> {
   const user = await getCurrentUser();
   return user?.role === "participant" ? user : null;
+}
+
+export async function setAdminSession(userId: string, eventId: string): Promise<void> {
+  cookies().set(
+    AUTH_COOKIE,
+    signAuthToken("admin", userId, eventId),
+    authCookieOptions()
+  );
+}
+
+export async function assertAdminOwnsEvent(
+  userId: string,
+  eventId: string
+): Promise<boolean> {
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, adminId: userId },
+    select: { id: true },
+  });
+  return !!event;
 }

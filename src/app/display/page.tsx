@@ -37,7 +37,9 @@ export default async function DisplayPage({
     redirect("/login?mode=admin");
   }
 
-  const joinUrl = `${baseUrl}/login?code=${encodeURIComponent(event.accessCode)}`;
+  const joinUrl = `${baseUrl}/e/${event.slug}`;
+
+  // Legacy /display?code= still works; QR now prefers slug URL above.
 
   return (
     <DisplayClient

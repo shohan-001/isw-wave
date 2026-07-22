@@ -12,6 +12,9 @@ export async function GET() {
   if (!admin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (!admin.eventId) {
+    return NextResponse.json({ error: "No active event." }, { status: 400 });
+  }
   const eventId = admin.eventId;
 
   const [totalRequests, approved, rejected, pending, played, queueRows, top] =
