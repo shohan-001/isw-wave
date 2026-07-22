@@ -8,6 +8,7 @@ import {
   notifyQueue,
   notifyRequests,
 } from "@/lib/realtime";
+import { recordSongPlay } from "@/lib/song-play-stats";
 
 export const dynamic = "force-dynamic";
 
@@ -130,6 +131,12 @@ export async function PATCH(
       await prisma.request.update({
         where: { id },
         data: { status: STATUS.PLAYED, queuePosition: null },
+      });
+      await recordSongPlay({
+        eventId,
+        youtubeVideoId: target.youtubeVideoId,
+        title: target.title,
+        thumbnailUrl: target.thumbnailUrl,
       });
       response = NextResponse.json({ ok: true, nextRequestId: nextId });
       break;

@@ -93,6 +93,10 @@ model Participant {
   displayName String
   deviceId    String
 
+  banned    Boolean   @default(false)
+  bannedAt  DateTime?
+  banReason String    @default("")
+
   createdAt DateTime @default(now())
 
   event    Event     @relation("EventParticipants", fields: [eventId], references: [id])
@@ -183,4 +187,21 @@ model YouTubeQuotaDay {
   dayKey    String @id
   unitsUsed Int    @default(0)
   updatedAt DateTime @updatedAt
+}
+
+// Per-day play counts (UTC dayKey). Rows older than today are pruned on write.
+model SongPlayStat {
+  id              String @id @default(cuid())
+  dayKey          String
+  eventId         String
+  youtubeVideoId  String
+  title           String
+  thumbnailUrl    String @default("")
+  playCount       Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([dayKey, eventId, youtubeVideoId])
+  @@index([dayKey, playCount])
+  @@index([eventId, dayKey])
 }

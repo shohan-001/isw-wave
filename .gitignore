@@ -53,3 +53,12 @@ skills-lock.json
 
 # Separate repo: github.com/shohan-001/isw-wave-showcase
 showcase/
+
+# Flutter
+apps/isw_wave_admin/.dart_tool/
+apps/isw_wave_admin/.packages
+apps/isw_wave_admin/build/
+apps/isw_wave_admin/.flutter-plugins
+apps/isw_wave_admin/.flutter-plugins-dependencies
+apps/isw_wave_admin/android/.gradle/
+apps/isw_wave_admin/android/local.properties

@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, setAdminSession, assertAdminOwnsEvent } from "@/lib/auth";
+import {
+  requireAdmin,
+  setAdminSession,
+  assertAdminOwnsEvent,
+  signAuthToken,
+} from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -22,5 +27,6 @@ export async function POST(req: Request) {
   }
 
   await setAdminSession(admin.id, eventId);
-  return NextResponse.json({ ok: true, eventId });
+  const token = signAuthToken("admin", admin.id, eventId);
+  return NextResponse.json({ ok: true, eventId, token });
 }

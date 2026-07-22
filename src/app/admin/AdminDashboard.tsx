@@ -64,6 +64,12 @@ export function AdminDashboard({
     normalizeHex(initialAccent || "") || DEFAULT_ACCENT
   );
   const [logoDraft, setLogoDraft] = useState("");
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwMsg, setPwMsg] = useState<string | null>(null);
+  const [pwErr, setPwErr] = useState<string | null>(null);
 
   const [fbQuery, setFbQuery] = useState("");
   const [fbResults, setFbResults] = useState<SearchResult[]>([]);
@@ -1190,6 +1196,91 @@ export function AdminDashboard({
                       : "Flag only"}
                   </button>
                 </SettingRow>
+
+                <div className="my-4 border-t border-white/10" />
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-white/40">
+                  Account
+                </p>
+                <form
+                  className="space-y-2"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    setPwMsg(null);
+                    setPwErr(null);
+                    if (pwNew.length < 8) {
+                      setPwErr("New password must be at least 8 characters.");
+                      return;
+                    }
+                    if (pwNew !== pwConfirm) {
+                      setPwErr("New passwords do not match.");
+                      return;
+                    }
+                    setPwBusy(true);
+                    try {
+                      const res = await fetch("/api/auth/password", {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({
+                          currentPassword: pwCurrent,
+                          newPassword: pwNew,
+                        }),
+                      });
+                      const d = (await res.json().catch(() => ({}))) as {
+                        error?: string;
+                      };
+                      if (!res.ok) {
+                        setPwErr(d.error || "Could not change password.");
+                        return;
+                      }
+                      setPwCurrent("");
+                      setPwNew("");
+                      setPwConfirm("");
+                      setPwMsg("Password updated.");
+                    } catch {
+                      setPwErr("Network error. Try again.");
+                    } finally {
+                      setPwBusy(false);
+                    }
+                  }}
+                >
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    placeholder="Current password"
+                    value={pwCurrent}
+                    onChange={(e) => setPwCurrent(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-ink-800 px-3 py-2 text-sm text-white focus:border-wave/50 focus:outline-none"
+                  />
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="New password (min 8)"
+                    value={pwNew}
+                    onChange={(e) => setPwNew(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-ink-800 px-3 py-2 text-sm text-white focus:border-wave/50 focus:outline-none"
+                  />
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Confirm new password"
+                    value={pwConfirm}
+                    onChange={(e) => setPwConfirm(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-ink-800 px-3 py-2 text-sm text-white focus:border-wave/50 focus:outline-none"
+                  />
+                  {pwErr ? (
+                    <p className="text-xs text-rose-300">{pwErr}</p>
+                  ) : null}
+                  {pwMsg ? (
+                    <p className="text-xs text-pulse">{pwMsg}</p>
+                  ) : null}
+                  <button
+                    type="submit"
+                    disabled={pwBusy || !pwCurrent || !pwNew}
+                    className="rounded-lg bg-pulse px-3 py-2 text-xs font-bold text-ink disabled:opacity-50"
+                  >
+                    {pwBusy ? "Saving…" : "Change password"}
+                  </button>
+                </form>
               </section>
             )}
           </div>

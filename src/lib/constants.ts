@@ -5,6 +5,7 @@ export const EVENT_ID = "isw-wave-main-event";
 
 // Cookie names. One signed cookie for both admin and participant sessions.
 export const AUTH_COOKIE = "isw_auth";
+export const OWNER_COOKIE = "isw_owner";
 
  // Client-side device fingerprint (localStorage). Bound to one display name.
 export const DEVICE_ID_KEY = "isw_device_id";
