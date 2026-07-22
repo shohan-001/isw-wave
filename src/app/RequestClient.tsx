@@ -50,6 +50,10 @@ export function RequestClient({
   const [used, setUsed] = useState(0);
   const [limit, setLimit] = useState(0);
   const [voteBusy, setVoteBusy] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const queueSongs = crowd.filter((r) => r.status === "approved");
+  const pendingSongs = crowd.filter((r) => r.status === "pending");
 
   const loadMine = useCallback(async () => {
     const res = await fetch("/api/requests?mine=1", { cache: "no-store" });
@@ -79,7 +83,7 @@ export function RequestClient({
   }, [loadMine, loadCrowd]);
 
   useEffect(() => {
-    const ms = isClientRealtimeConfigured() ? 30000 : 5000;
+    const ms = isClientRealtimeConfigured() ? 15000 : 4000;
     const t = setInterval(() => {
       void loadMine();
       void loadCrowd();
@@ -93,7 +97,16 @@ export function RequestClient({
       void loadCrowd();
     },
     "pending:update": () => void loadCrowd(),
+    "queue:update": () => {
+      void loadCrowd();
+      void loadMine();
+    },
   });
+
+  function focusSearch() {
+    searchInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    searchInputRef.current?.focus();
+  }
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -220,8 +233,8 @@ export function RequestClient({
 
   return (
     <CinematicStage artUrl={stageArt}>
-      <main className="mx-auto flex min-h-[100dvh] w-full max-w-lg flex-col px-4 pb-28 pt-6 sm:px-5">
-        <header className="mb-5">
+      <main className="mx-auto flex min-h-[100dvh] w-full max-w-lg flex-col px-4 pb-32 pt-6 sm:px-5">
+        <header className="mb-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
               {logoUrl ? (
@@ -252,7 +265,7 @@ export function RequestClient({
             {eventName}
           </h1>
           <p className="mt-1.5 text-sm text-white/45">
-            Search a song and send it to the stage.
+            Upvote the queue or request a song for the crowd.
           </p>
           {queueData?.nowPlaying ? (
             <p className="mt-3 truncate text-xs text-pulse/80">
@@ -263,9 +276,55 @@ export function RequestClient({
 
         <QuotaLine used={used} limit={limit} />
 
-        <form onSubmit={onSubmitSearch} className="sticky top-3 z-10 mt-4">
+        {/* Sticky request CTA — always on the first screen */}
+        <div className="sticky top-2 z-20 mt-4">
+          <button
+            type="button"
+            onClick={focusSearch}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-pulse px-4 py-3.5 text-sm font-bold text-ink shadow-[0_0_28px_-4px_rgba(34,211,238,0.55)] transition active:scale-[0.98]"
+          >
+            Request a song
+          </button>
+        </div>
+
+        {/* Live queue — upvote to bump play order */}
+        <section className="mt-6">
+          <h2 className="mb-1 px-1 font-display text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
+            Up next{" "}
+            <span className="text-white/25">{queueSongs.length}</span>
+          </h2>
+          <p className="mb-3 px-1 text-xs text-white/35">
+            Tap ▲ to boost songs you want — highest votes play next.
+          </p>
+          <ul className="flex flex-col gap-2">
+            <AnimatePresence initial={false}>
+              {queueSongs.map((r, i) => (
+                <VoteRow
+                  key={r.id}
+                  request={r}
+                  rank={i + 1}
+                  busy={voteBusy === r.id}
+                  onVote={() => toggleVote(r.id)}
+                  badge={i === 0 ? "Next" : undefined}
+                />
+              ))}
+            </AnimatePresence>
+            {queueSongs.length === 0 && (
+              <li className="py-4 text-center text-sm text-white/30">
+                Queue is empty — request the first track.
+              </li>
+            )}
+          </ul>
+        </section>
+
+        <form
+          id="request-search"
+          onSubmit={onSubmitSearch}
+          className="mt-6 scroll-mt-24"
+        >
           <GlassPanel className="flex gap-2 rounded-2xl p-2 shadow-glow">
             <input
+              ref={searchInputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               inputMode="search"
@@ -330,7 +389,10 @@ export function RequestClient({
                             : "hover:bg-white/[0.06]"
                         }`}
                       >
-                        <Thumb src={r.thumbnailUrl} alt={r.title} />
+                        <Thumb
+                          src={hiResThumb(r.youtubeVideoId, r.thumbnailUrl)}
+                          alt={r.title}
+                        />
                         <span className="min-w-0 flex-1">
                           <span className="line-clamp-2 text-sm font-medium text-white">
                             {r.title}
@@ -355,59 +417,29 @@ export function RequestClient({
           </ul>
         </section>
 
-        <section className="mt-8">
-          <h2 className="mb-2 px-1 font-display text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
-            Pending requests{" "}
-            <span className="text-white/25">{crowd.length}</span>
-          </h2>
-          <p className="mb-3 px-1 text-xs text-white/35">
-            Upvote songs you also want — helps the DJ prioritize. Does not
-            auto-approve.
-          </p>
-          <ul className="flex flex-col gap-2">
-            <AnimatePresence initial={false}>
-              {crowd.map((r) => (
-                <motion.li
-                  key={r.id}
-                  layout
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  className="glass-edge flex items-center gap-3 rounded-2xl p-2.5"
-                >
-                  <Thumb src={r.thumbnailUrl} alt={r.title} small />
-                  <span className="min-w-0 flex-1">
-                    <span className="line-clamp-1 text-sm font-medium text-white">
-                      {r.title}
-                    </span>
-                    <span className="mt-0.5 block truncate text-xs text-white/40">
-                      {r.requesterName}
-                      {r.flagged ? " · flagged" : ""}
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    disabled={voteBusy === r.id}
-                    onClick={() => toggleVote(r.id)}
-                    className={`flex flex-col items-center rounded-xl px-2.5 py-1.5 text-xs font-bold transition active:scale-95 disabled:opacity-50 ${
-                      r.iVoted
-                        ? "bg-pulse/20 text-pulse"
-                        : "bg-white/[0.06] text-white/45 hover:text-pulse"
-                    }`}
-                  >
-                    <span>▲</span>
-                    <span>{r.voteCount}</span>
-                  </button>
-                </motion.li>
-              ))}
-            </AnimatePresence>
-            {crowd.length === 0 && (
-              <li className="py-4 text-center text-sm text-white/30">
-                No pending requests yet — be the first.
-              </li>
-            )}
-          </ul>
-        </section>
+        {pendingSongs.length > 0 && (
+          <section className="mt-8">
+            <h2 className="mb-1 px-1 font-display text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
+              Awaiting approval{" "}
+              <span className="text-white/25">{pendingSongs.length}</span>
+            </h2>
+            <p className="mb-3 px-1 text-xs text-white/35">
+              Upvote to help the DJ prioritize — does not auto-approve.
+            </p>
+            <ul className="flex flex-col gap-2">
+              <AnimatePresence initial={false}>
+                {pendingSongs.map((r) => (
+                  <VoteRow
+                    key={r.id}
+                    request={r}
+                    busy={voteBusy === r.id}
+                    onVote={() => toggleVote(r.id)}
+                  />
+                ))}
+              </AnimatePresence>
+            </ul>
+          </section>
+        )}
 
         {mine.length > 0 && (
           <section className="mt-8">
@@ -425,7 +457,11 @@ export function RequestClient({
                     exit={{ opacity: 0 }}
                     className="glass-edge flex items-center gap-3 rounded-2xl p-2.5"
                   >
-                    <Thumb src={r.thumbnailUrl} alt={r.title} small />
+                    <Thumb
+                      src={hiResThumb(r.youtubeVideoId, r.thumbnailUrl)}
+                      alt={r.title}
+                      small
+                    />
                     <span className="min-w-0 flex-1">
                       <span className="line-clamp-1 text-sm font-medium text-white">
                         {r.title}
@@ -446,6 +482,19 @@ export function RequestClient({
           </section>
         )}
 
+        {/* Fixed bottom request bar — always reachable without hunting */}
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/5 bg-ink/90 px-4 py-3 backdrop-blur-xl">
+          <div className="mx-auto flex w-full max-w-lg gap-2">
+            <button
+              type="button"
+              onClick={focusSearch}
+              className="flex-1 rounded-xl bg-pulse py-3.5 text-sm font-bold text-ink shadow-[0_0_24px_-4px_rgba(34,211,238,0.5)]"
+            >
+              Request a song
+            </button>
+          </div>
+        </div>
+
         <ConfirmSheet
           selected={selected}
           displayName={user.displayName}
@@ -460,6 +509,71 @@ export function RequestClient({
       </main>
     </CinematicStage>
   );
+}
+
+function VoteRow({
+  request: r,
+  rank,
+  busy,
+  onVote,
+  badge,
+}: {
+  request: PublicRequest;
+  rank?: number;
+  busy: boolean;
+  onVote: () => void;
+  badge?: string;
+}) {
+  return (
+    <motion.li
+      layout
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      className="glass-edge flex items-center gap-3 rounded-2xl p-2.5"
+    >
+      {badge ? (
+        <span className="shrink-0 rounded-md bg-pulse px-1.5 py-0.5 font-display text-[9px] font-bold uppercase text-ink">
+          {badge}
+        </span>
+      ) : rank != null ? (
+        <span className="w-5 shrink-0 text-center font-display text-sm font-bold text-pulse">
+          {rank}
+        </span>
+      ) : null}
+      <Thumb
+        src={hiResThumb(r.youtubeVideoId, r.thumbnailUrl)}
+        alt={r.title}
+        small
+      />
+      <span className="min-w-0 flex-1">
+        <span className="line-clamp-1 text-sm font-medium text-white">
+          {r.title}
+        </span>
+        <span className="mt-0.5 block truncate text-xs text-white/40">
+          {r.requesterName}
+          {r.flagged ? " · flagged" : ""}
+        </span>
+      </span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onVote}
+        className={`flex flex-col items-center rounded-xl px-2.5 py-1.5 text-xs font-bold transition active:scale-95 disabled:opacity-50 ${
+          r.iVoted
+            ? "bg-pulse/20 text-pulse"
+            : "bg-white/[0.06] text-white/45 hover:text-pulse"
+        }`}
+      >
+        <span>▲</span>
+        <span>{r.voteCount}</span>
+      </button>
+    </motion.li>
+  );
+}
+
+function hiResThumb(videoId: string, fallback: string): string {
+  return videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : fallback;
 }
 
 function QuotaLine({ used, limit }: { used: number; limit: number }) {
@@ -555,7 +669,7 @@ function ConfirmSheet({
       {selected && (
         <>
           <motion.div
-            className="fixed inset-0 z-40 bg-black/65 backdrop-blur-md"
+            className="fixed inset-0 z-40 bg-black/70"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -570,7 +684,13 @@ function ConfirmSheet({
           >
             <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20" />
             <div className="flex gap-3">
-              <Thumb src={selected.thumbnailUrl} alt={selected.title} />
+              <Thumb
+                src={hiResThumb(
+                  selected.youtubeVideoId,
+                  selected.thumbnailUrl
+                )}
+                alt={selected.title}
+              />
               <div className="min-w-0 flex-1">
                 <p className="line-clamp-2 text-sm font-semibold text-white">
                   {selected.title}

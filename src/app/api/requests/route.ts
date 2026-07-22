@@ -137,8 +137,18 @@ export async function GET(req: Request) {
     if (!session || session.role !== "participant") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const event = await prisma.event.findUnique({
+      where: { id: session.eventId },
+      select: { currentRequestId: true },
+    });
     const rows = await prisma.request.findMany({
-      where: { eventId: session.eventId, status: STATUS.PENDING },
+      where: {
+        eventId: session.eventId,
+        status: { in: [STATUS.PENDING, STATUS.APPROVED] },
+        ...(event?.currentRequestId
+          ? { id: { not: event.currentRequestId } }
+          : {}),
+      },
       orderBy: [{ voteCount: "desc" }, { createdAt: "asc" }],
       include: {
         votes: {
