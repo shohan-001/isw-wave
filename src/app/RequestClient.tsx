@@ -103,11 +103,6 @@ export function RequestClient({
     },
   });
 
-  function focusSearch() {
-    searchInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    searchInputRef.current?.focus();
-  }
-
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runSearch = useCallback(async (q: string) => {
@@ -233,7 +228,7 @@ export function RequestClient({
 
   return (
     <CinematicStage artUrl={stageArt}>
-      <main className="mx-auto flex min-h-[100dvh] w-full max-w-lg flex-col px-4 pb-32 pt-6 sm:px-5">
+      <main className="mx-auto flex min-h-[100dvh] w-full max-w-lg flex-col px-4 pb-10 pt-6 sm:px-5">
         <header className="mb-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
@@ -276,51 +271,10 @@ export function RequestClient({
 
         <QuotaLine used={used} limit={limit} />
 
-        {/* Sticky request CTA — always on the first screen */}
-        <div className="sticky top-2 z-20 mt-4">
-          <button
-            type="button"
-            onClick={focusSearch}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-pulse px-4 py-3.5 text-sm font-bold text-ink shadow-[0_0_28px_-4px_rgba(34,211,238,0.55)] transition active:scale-[0.98]"
-          >
-            Request a song
-          </button>
-        </div>
-
-        {/* Live queue — upvote to bump play order */}
-        <section className="mt-6">
-          <h2 className="mb-1 px-1 font-display text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
-            Up next{" "}
-            <span className="text-white/25">{queueSongs.length}</span>
-          </h2>
-          <p className="mb-3 px-1 text-xs text-white/35">
-            Tap ▲ to boost songs you want — highest votes play next.
-          </p>
-          <ul className="flex flex-col gap-2">
-            <AnimatePresence initial={false}>
-              {queueSongs.map((r, i) => (
-                <VoteRow
-                  key={r.id}
-                  request={r}
-                  rank={i + 1}
-                  busy={voteBusy === r.id}
-                  onVote={() => toggleVote(r.id)}
-                  badge={i === 0 ? "Next" : undefined}
-                />
-              ))}
-            </AnimatePresence>
-            {queueSongs.length === 0 && (
-              <li className="py-4 text-center text-sm text-white/30">
-                Queue is empty — request the first track.
-              </li>
-            )}
-          </ul>
-        </section>
-
         <form
           id="request-search"
           onSubmit={onSubmitSearch}
-          className="mt-6 scroll-mt-24"
+          className="mt-4"
         >
           <GlassPanel className="flex gap-2 rounded-2xl p-2 shadow-glow">
             <input
@@ -329,7 +283,7 @@ export function RequestClient({
               onChange={(e) => setQuery(e.target.value)}
               inputMode="search"
               enterKeyHint="search"
-              placeholder="Search for a song…"
+              placeholder="Search for a song to request…"
               className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-base text-white placeholder:text-white/30 focus:outline-none"
               aria-label="Search for a song"
             />
@@ -347,7 +301,7 @@ export function RequestClient({
           </p>
         </form>
 
-        <section className="mt-4 flex-1">
+        <section className="mt-4">
           {phase === "searching" && <ResultSkeletons />}
 
           {phase === "results" && searchError && (
@@ -375,19 +329,27 @@ export function RequestClient({
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
+                      className={`glass-edge overflow-hidden rounded-2xl ${
+                        isSelected
+                          ? "bg-pulse/10 shadow-[0_0_32px_-8px_rgba(34,211,238,0.45)]"
+                          : ""
+                      }`}
                     >
-                      <motion.button
-                        whileTap={{ scale: 0.99 }}
-                        onClick={() => {
+                      <button
+                        type="button"
+                        onClick={(e) => {
                           setSelected(r);
                           setSubmitError(null);
+                          // Keep Cancel/Request in view under this row.
+                          requestAnimationFrame(() => {
+                            (e.currentTarget.parentElement as HTMLElement | null)?.scrollIntoView({
+                              behavior: "smooth",
+                              block: "nearest",
+                            });
+                          });
                         }}
                         aria-pressed={isSelected}
-                        className={`glass-edge flex w-full items-center gap-3 rounded-2xl p-2.5 text-left transition ${
-                          isSelected
-                            ? "bg-pulse/10 shadow-[0_0_32px_-8px_rgba(34,211,238,0.45)]"
-                            : "hover:bg-white/[0.06]"
-                        }`}
+                        className="flex w-full items-center gap-3 p-2.5 text-left transition hover:bg-white/[0.04]"
                       >
                         <Thumb
                           src={hiResThumb(r.youtubeVideoId, r.thumbnailUrl)}
@@ -404,16 +366,90 @@ export function RequestClient({
                               : ""}
                           </span>
                         </span>
+                      </button>
+
+                      {/* Cancel / Request appear right on this result — no scrolling */}
+                      <AnimatePresence>
                         {isSelected && (
-                          <span className="shrink-0 rounded-full bg-pulse px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-ink">
-                            Selected
-                          </span>
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden border-t border-white/8"
+                          >
+                            <div className="space-y-2 px-2.5 py-2.5">
+                              <p className="px-1 text-xs text-white/50">
+                                Requesting as{" "}
+                                <span className="font-semibold text-white">
+                                  {user.displayName}
+                                </span>
+                              </p>
+                              {submitError && (
+                                <p className="px-1 text-sm text-red-300">
+                                  {submitError}
+                                </p>
+                              )}
+                              {atLimit && !submitError && (
+                                <p className="px-1 text-sm text-amber-300/90">
+                                  You&apos;re at your request limit.
+                                </p>
+                              )}
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelected(null)}
+                                  className="flex-1 rounded-xl bg-white/[0.08] py-3 text-sm font-semibold text-white/70 active:scale-[0.98]"
+                                >
+                                  Cancel
+                                </button>
+                                <motion.button
+                                  type="button"
+                                  whileTap={{ scale: 0.96 }}
+                                  onClick={() => void submitRequest()}
+                                  disabled={submitting}
+                                  className="flex-[1.6] rounded-xl bg-pulse py-3 text-sm font-bold text-ink disabled:opacity-60"
+                                >
+                                  {submitting ? "Sending…" : "Request this song"}
+                                </motion.button>
+                              </div>
+                            </div>
+                          </motion.div>
                         )}
-                      </motion.button>
+                      </AnimatePresence>
                     </motion.li>
                   );
                 })}
             </AnimatePresence>
+          </ul>
+        </section>
+
+        {/* Live queue — upvote to bump play order */}
+        <section className="mt-8">
+          <h2 className="mb-1 px-1 font-display text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
+            Up next{" "}
+            <span className="text-white/25">{queueSongs.length}</span>
+          </h2>
+          <p className="mb-3 px-1 text-xs text-white/35">
+            Tap ▲ to boost songs you want — highest votes play next.
+          </p>
+          <ul className="flex flex-col gap-2">
+            <AnimatePresence initial={false}>
+              {queueSongs.map((r, i) => (
+                <VoteRow
+                  key={r.id}
+                  request={r}
+                  rank={i + 1}
+                  busy={voteBusy === r.id}
+                  onVote={() => toggleVote(r.id)}
+                  badge={i === 0 ? "Next" : undefined}
+                />
+              ))}
+            </AnimatePresence>
+            {queueSongs.length === 0 && (
+              <li className="py-4 text-center text-sm text-white/30">
+                Queue is empty — request the first track.
+              </li>
+            )}
           </ul>
         </section>
 
@@ -481,29 +517,6 @@ export function RequestClient({
             </ul>
           </section>
         )}
-
-        {/* Fixed bottom request bar — always reachable without hunting */}
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/5 bg-ink/90 px-4 py-3 backdrop-blur-xl">
-          <div className="mx-auto flex w-full max-w-lg gap-2">
-            <button
-              type="button"
-              onClick={focusSearch}
-              className="flex-1 rounded-xl bg-pulse py-3.5 text-sm font-bold text-ink shadow-[0_0_24px_-4px_rgba(34,211,238,0.5)]"
-            >
-              Request a song
-            </button>
-          </div>
-        </div>
-
-        <ConfirmSheet
-          selected={selected}
-          displayName={user.displayName}
-          submitting={submitting}
-          atLimit={atLimit}
-          error={submitError}
-          onClose={() => setSelected(null)}
-          onConfirm={submitRequest}
-        />
 
         <AnimatePresence>{justSubmitted && <SuccessBurst />}</AnimatePresence>
       </main>
@@ -644,99 +657,6 @@ function ResultSkeletons() {
         </li>
       ))}
     </ul>
-  );
-}
-
-function ConfirmSheet({
-  selected,
-  displayName,
-  submitting,
-  atLimit,
-  error,
-  onClose,
-  onConfirm,
-}: {
-  selected: SearchResult | null;
-  displayName: string;
-  submitting: boolean;
-  atLimit: boolean;
-  error: string | null;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <AnimatePresence>
-      {selected && (
-        <>
-          <motion.div
-            className="fixed inset-0 z-40 bg-black/70"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-          />
-          <motion.div
-            className="glass-edge fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-lg rounded-t-[2rem] p-5 pb-8 shadow-glow-lg"
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 30, stiffness: 300 }}
-          >
-            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20" />
-            <div className="flex gap-3">
-              <Thumb
-                src={hiResThumb(
-                  selected.youtubeVideoId,
-                  selected.thumbnailUrl
-                )}
-                alt={selected.title}
-              />
-              <div className="min-w-0 flex-1">
-                <p className="line-clamp-2 text-sm font-semibold text-white">
-                  {selected.title}
-                </p>
-                <p className="mt-0.5 truncate text-xs text-white/45">
-                  {selected.channelName}
-                  {selected.durationSeconds
-                    ? ` · ${formatDuration(selected.durationSeconds)}`
-                    : ""}
-                </p>
-              </div>
-            </div>
-
-            <p className="mt-5 rounded-2xl bg-white/[0.04] px-4 py-3 text-sm text-white/65">
-              Requesting as{" "}
-              <span className="font-semibold text-white">{displayName}</span>
-            </p>
-
-            {error && <p className="mt-3 text-sm text-red-300">{error}</p>}
-            {atLimit && !error && (
-              <p className="mt-3 text-sm text-amber-300/90">
-                You&apos;re at your request limit. This will fail until one of
-                your songs plays.
-              </p>
-            )}
-
-            <div className="mt-5 flex gap-3">
-              <button
-                onClick={onClose}
-                className="flex-1 rounded-xl bg-white/[0.06] py-3 text-sm font-semibold text-white/65 transition active:scale-[0.98]"
-              >
-                Cancel
-              </button>
-              <motion.button
-                whileTap={{ scale: 0.96 }}
-                onClick={onConfirm}
-                disabled={submitting}
-                className="flex-[1.6] rounded-xl bg-pulse py-3 text-sm font-bold text-ink shadow-[0_0_28px_-4px_rgba(34,211,238,0.55)] transition disabled:opacity-60"
-              >
-                {submitting ? "Sending…" : "Request this song"}
-              </motion.button>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
   );
 }
 
