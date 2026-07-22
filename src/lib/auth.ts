@@ -1,123 +1,31 @@
 import "server-only";
 import crypto from "node:crypto";
-import bcrypt from "bcryptjs";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { prisma } from "./db";
-import { AUTH_COOKIE } from "./constants";
+import { AUTH_COOKIE, OWNER_COOKIE } from "./constants";
+import {
+  signAuthToken,
+  verifyAuthToken,
+  authCookieOptions,
+  type AdminSession,
+  type ParticipantSession,
+  type SessionUser,
+} from "./auth-core";
 
-// --- Phase 2/5 auth ------------------------------------------------------------
-//
-// Signed cookie (`isw_auth`):
-//   admin.{userId}.{eventId}.{sig}  — admin (password login, active event)
-//   admin.{userId}.{sig}            — legacy admin token (first event fallback)
-//   participant.{participantId}.{sig} — attendee (name + event access code)
-
-const SECRET = process.env.SESSION_SECRET || "dev-secret-change-me";
-const BCRYPT_ROUNDS = 10;
-
-export type AdminSession = {
-  role: "admin";
-  id: string;
-  username: string;
-  email: string;
-  eventId: string;
-  eventSlug: string;
-  isAdmin: true;
-};
-
-export type ParticipantSession = {
-  role: "participant";
-  id: string;
-  displayName: string;
-  eventId: string;
-  eventSlug: string;
-  isAdmin: false;
-};
-
-export type SessionUser = AdminSession | ParticipantSession;
-
-export async function hashPassword(plain: string): Promise<string> {
-  return bcrypt.hash(plain, BCRYPT_ROUNDS);
-}
-
-export async function verifyPassword(
-  plain: string,
-  hash: string
-): Promise<boolean> {
-  return bcrypt.compare(plain, hash);
-}
-
-const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-export function generateAccessCode(length = 6): string {
-  let out = "";
-  for (let i = 0; i < length; i++) {
-    out += CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)];
-  }
-  return out;
-}
-
-export function normalizeAccessCode(raw: string): string {
-  return raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-}
-
-function sign(value: string): string {
-  return crypto.createHmac("sha256", SECRET).update(value).digest("hex");
-}
-
-function verifySig(payload: string, sig: string): boolean {
-  const expected = sign(payload);
-  if (sig.length !== expected.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
-}
-
-export function signAuthToken(
-  role: "admin" | "participant",
-  id: string,
-  eventId?: string
-): string {
-  const payload =
-    role === "admin" && eventId ? `admin.${id}.${eventId}` : `${role}.${id}`;
-  return `${payload}.${sign(payload)}`;
-}
-
-export type ParsedAuthToken = {
-  role: "admin" | "participant";
-  id: string;
-  eventId?: string;
-};
-
-export function verifyAuthToken(token: string | undefined): ParsedAuthToken | null {
-  if (!token) return null;
-  const parts = token.split(".");
-  if (parts.length < 3) return null;
-
-  if (parts[0] === "admin" && parts.length === 4) {
-    const [, userId, eventId, sig] = parts;
-    if (!userId || !eventId || !sig) return null;
-    const payload = `admin.${userId}.${eventId}`;
-    if (!verifySig(payload, sig)) return null;
-    return { role: "admin", id: userId, eventId };
-  }
-
-  if (parts.length !== 3) return null;
-  const [role, id, sig] = parts;
-  if (role !== "admin" && role !== "participant") return null;
-  if (!id || !sig) return null;
-  const payload = `${role}.${id}`;
-  if (!verifySig(payload, sig)) return null;
-  return { role, id };
-}
-
-export function authCookieOptions() {
-  return {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  };
-}
+// Re-export password/token helpers so existing imports from @/lib/auth keep working.
+export {
+  hashPassword,
+  verifyPassword,
+  generateAccessCode,
+  normalizeAccessCode,
+  signAuthToken,
+  verifyAuthToken,
+  authCookieOptions,
+  type AdminSession,
+  type ParticipantSession,
+  type SessionUser,
+  type ParsedAuthToken,
+} from "./auth-core";
 
 async function resolveAdminEvent(
   userId: string,
@@ -137,8 +45,15 @@ async function resolveAdminEvent(
   });
 }
 
-export async function getCurrentUser(): Promise<SessionUser | null> {
-  const token = cookies().get(AUTH_COOKIE)?.value;
+function readBearerToken(): string | undefined {
+  const h = headers().get("authorization") || "";
+  const m = /^Bearer\s+(.+)$/i.exec(h.trim());
+  return m?.[1]?.trim() || undefined;
+}
+
+export async function sessionFromToken(
+  token: string | undefined
+): Promise<SessionUser | null> {
   const parsed = verifyAuthToken(token);
   if (!parsed) return null;
 
@@ -168,10 +83,11 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
       id: true,
       displayName: true,
       eventId: true,
+      banned: true,
       event: { select: { slug: true } },
     },
   });
-  if (!participant) return null;
+  if (!participant || participant.banned) return null;
 
   return {
     role: "participant",
@@ -181,6 +97,16 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     eventSlug: participant.event.slug,
     isAdmin: false,
   };
+}
+
+export async function getCurrentUser(): Promise<SessionUser | null> {
+  const bearer = readBearerToken();
+  if (bearer) {
+    const fromBearer = await sessionFromToken(bearer);
+    if (fromBearer) return fromBearer;
+  }
+  const token = cookies().get(AUTH_COOKIE)?.value;
+  return sessionFromToken(token);
 }
 
 export async function requireUser(): Promise<SessionUser | null> {
@@ -214,4 +140,71 @@ export async function assertAdminOwnsEvent(
     select: { id: true },
   });
   return !!event;
+}
+
+// --- Owner ops console (secret path + passphrase) -----------------------------
+
+const OWNER_PAYLOAD = "owner.ok";
+
+function ownerSecret(): string {
+  return process.env.SESSION_SECRET || "dev-secret-change-me";
+}
+
+export function getOwnerPanelPath(): string {
+  return (process.env.OWNER_PANEL_PATH || "").trim().replace(/^\/+|\/+$/g, "");
+}
+
+export function ownerPasswordConfigured(): boolean {
+  return Boolean(process.env.OWNER_PASSWORD?.trim());
+}
+
+function signOwner(value: string): string {
+  return crypto
+    .createHmac("sha256", ownerSecret())
+    .update(value)
+    .digest("hex");
+}
+
+export function signOwnerToken(): string {
+  return `${OWNER_PAYLOAD}.${signOwner(OWNER_PAYLOAD)}`;
+}
+
+export function verifyOwnerToken(token: string | undefined): boolean {
+  if (!token) return false;
+  const expected = signOwnerToken();
+  if (token.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected));
+}
+
+export function ownerCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 12,
+  };
+}
+
+export async function setOwnerSession(): Promise<void> {
+  cookies().set(OWNER_COOKIE, signOwnerToken(), ownerCookieOptions());
+}
+
+export async function clearOwnerSession(): Promise<void> {
+  cookies().set(OWNER_COOKIE, "", { ...ownerCookieOptions(), maxAge: 0 });
+}
+
+export async function requireOwner(): Promise<boolean> {
+  if (!ownerPasswordConfigured() || !getOwnerPanelPath()) return false;
+  const token = cookies().get(OWNER_COOKIE)?.value;
+  return verifyOwnerToken(token);
+}
+
+export async function verifyOwnerPassword(plain: string): Promise<boolean> {
+  const expected = process.env.OWNER_PASSWORD?.trim() || "";
+  if (!expected || !plain) return false;
+  // Constant-time-ish compare via HMAC digests of both sides.
+  const a = crypto.createHmac("sha256", ownerSecret()).update(plain).digest();
+  const b = crypto.createHmac("sha256", ownerSecret()).update(expected).digest();
+  return crypto.timingSafeEqual(a, b);
 }

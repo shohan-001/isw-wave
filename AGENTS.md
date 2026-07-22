@@ -4,7 +4,7 @@
 
 **Maintenance rule:** Update this file after **every major feature, architecture change, or operational gotcha**. Keep it accurate — prefer short bullets over essays. If README and this file disagree, fix both.
 
-**Last reviewed:** 2026-07-22 (favicon, display button, poll/autoplay/vote optimization, cinematic UI, voting, Pusher, Turso).
+**Last reviewed:** 2026-07-23 (owner ops, admin password change, SongPlayStat, Flutter admin scaffold, Bearer tokens).
 
 ---
 
@@ -15,10 +15,11 @@ ISW Wave is a **multi-tenant live song-request app** for events.
 | Role | Job |
 | --- | --- |
 | **Guest** | Join `/e/{slug}` with a display name; search YouTube; request; upvote queue |
-| **Organizer / admin** | Own events; moderate; **play venue audio** on `/admin` (YouTube IFrame) |
+| **Organizer / admin** | Own events; moderate; **play venue audio** on `/admin` (YouTube IFrame); change password |
 | **Display** | Silent hall screen: now playing + QR + up next (`/e/{slug}/display`) |
+| **Owner** | Hidden `/ops/<OWNER_PANEL_PATH>` — live event board, ban guests, top songs today, reset organizer passwords |
 
-**Hard rule:** Only the **admin** laptop produces sound. Display is informational (YouTube ToS + architecture).
+**Hard rule:** Only the **admin** laptop produces sound. Display is informational (YouTube ToS + architecture). Owner is **ops/monitor**, not a second player.
 
 **Production URLs**
 
@@ -35,6 +36,7 @@ ISW Wave is a **multi-tenant live song-request app** for events.
   - Prod: Turso via `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`
 - Pusher Channels (optional realtime)
 - YouTube Data API v3 (search, server-only) + IFrame API (admin player)
+- Flutter admin scaffold: `apps/isw_wave_admin/` (Android / Linux / Windows)
 
 ---
 
@@ -49,21 +51,20 @@ src/app/
   display/                 # DisplayClient + legacy /display
   admin/                   # AdminDashboard (player + moderation)
   organizer/               # event list / signup / create
+  ops/[path]/              # hidden owner console (404 unless path matches env)
   api/                     # REST handlers (see below)
 src/lib/
   db.ts, db-config.ts      # Prisma client + Turso/local adapters
-  auth.ts                  # isw_auth cookie (HMAC)
+  auth.ts / auth-core.ts   # isw_auth + owner cookie + Bearer support
+  song-play-stats.ts       # daily play rollups + prune
   youtube*.ts              # search, cache, quota
   realtime*.ts             # Pusher publish + shared channel/event names
   useQueuePolling.ts       # queue fetch + Pusher debounce + poll
   useYouTubePlayer.ts      # admin player (load-once, ENDED guard)
-  useEventRealtime.ts      # client Pusher subscribe
-  public-url.ts            # QR base URL (blocks *.vercel.app)
-  slug.ts                  # eventPath / eventDisplayPath helpers
-  moderation.ts, theme.ts, types.ts, queries.ts, constants.ts
-src/components/cinematic/  # CinematicStage, GlassPanel, AlbumCarousel, …
-prisma/schema.prisma       # source of truth for models
-scripts/turso-migrate.ts   # production migrations (not plain prisma migrate on libsql)
+  …
+apps/isw_wave_admin/       # Flutter control-room MVP
+prisma/schema.prisma
+scripts/turso-migrate.ts
 AGENTS.md / README.md
 ```
 
@@ -72,11 +73,12 @@ AGENTS.md / README.md
 ## Data model (brief)
 
 - **Organization** ← owns → **User** (organizer) + many **Event**
-- **Event**: slug, accessCode, theme, limits, `currentRequestId`, `currentFallbackId`, `playbackPositionSec` / `playbackPlaying` / `playbackUpdatedAt`
-- **Participant**: per-event device lock (`eventId` + `deviceId`)
+- **Event**: slug, accessCode, theme, limits, `currentRequestId`, `currentFallbackId`, playback timeline fields
+- **Participant**: per-event device lock; **`banned` / `bannedAt` / `banReason`**
 - **Request**: pending / approved / rejected / played…; `queuePosition`, `voteCount`
 - **Vote**: unique `(requestId, participantId)`
 - **FallbackTrack**: ordered playlist when live queue empty
+- **SongPlayStat**: `(dayKey, eventId, youtubeVideoId)` play counts — **prune days &lt; today** on write
 - **SearchCache**, **YouTubeQuotaDay**: shared YouTube helpers
 
 Never hard-code a single `EVENT_ID` in APIs — resolve from session, `?code=`, `?eventId=`, or slug.
@@ -85,11 +87,15 @@ Never hard-code a single `EVENT_ID` in APIs — resolve from session, `?code=`, 
 
 ## Auth
 
-- Cookie name: `isw_auth` (`AUTH_COOKIE` in `src/lib/constants.ts`)
+- Cookie name: `isw_auth` (`AUTH_COOKIE`)
+- Owner cookie: `isw_owner` (`OWNER_COOKIE`) — HMAC of `owner.ok`
 - Admin: `admin.{userId}.{eventId}.{hmac}` (active event switchable)
-- Guest: `participant.{participantId}.{hmac}`
-- Guests join via `POST /api/auth/join` `{ name, code|slug, deviceId }` — device keeps one display name per event
-- Organizers: signup → org → create events → login
+- Guest: `participant.{participantId}.{hmac}` — banned participants resolve as logged out
+- **Bearer**: `Authorization: Bearer <token>` accepted (same token string as cookie). Login + event switch return `{ token }` for Flutter.
+- Owner gate: `OWNER_PANEL_PATH` + `OWNER_PASSWORD` (env). Wrong path → `notFound()`.
+- Admin password change: `POST /api/auth/password`
+- Owner reset organizer: `POST /api/owner/admin-password`
+- Guests join via `POST /api/auth/join` — rejected if banned
 - Legacy `useSession` / `/api/session` are obsolete — do not revive
 
 ---
@@ -98,7 +104,7 @@ Never hard-code a single `EVENT_ID` in APIs — resolve from session, `?code=`, 
 
 | Area | Routes |
 | --- | --- |
-| Auth | `/api/auth/{join,login,signup,logout,me}` |
+| Auth | `/api/auth/{join,login,signup,logout,me,password}` |
 | Search | `GET /api/search?q=` · `GET /api/quota` |
 | Requests | `/api/requests`, `/api/requests/[id]` (`approve|reject|remove|move|play|next`), `/api/requests/bulk` |
 | Votes | `POST /api/votes` |
@@ -106,11 +112,18 @@ Never hard-code a single `EVENT_ID` in APIs — resolve from session, `?code=`, 
 | Playback | `POST /api/playback` — fallback pointer + timeline ticks |
 | Fallback | `/api/fallback` |
 | Settings / events | `/api/settings`, `/api/events`, `/api/events/switch` |
+| Owner | `/api/owner/{login,logout,overview,ban,admin-password,top-songs}`, `/api/owner/events/[eventId]` |
 
 ### Playback / realtime gotcha (critical)
 
 `POST /api/playback` must **NOT** call `notifyQueue` on timeline ticks or `resetTimeline`. Only broadcast when the **fallback track pointer** changes. Timeline spam caused client queue-fetch storms.
 
+### Owner console
+
+- Never link from public UI / login.
+- Document path only via env + this file.
+- Ban guests with `POST /api/owner/ban`; join/request/vote blocked for banned participants.
+- `SongPlayStat` increments on `action: "next"`; prune older days automatically.
 ---
 
 ## Realtime & polling
@@ -170,6 +183,8 @@ Required: `TURSO_*`, `YOUTUBE_API_KEY`, `SESSION_SECRET`, `NEXT_PUBLIC_BASE_URL=
 
 Strongly recommended: full Pusher set (`PUSHER_APP_ID/KEY/SECRET/CLUSTER` + matching `NEXT_PUBLIC_PUSHER_*`)
 
+Owner ops: `OWNER_PANEL_PATH` (random slug) + `OWNER_PASSWORD`
+
 Seed-related: `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`
 
 ---
@@ -183,6 +198,7 @@ Seed-related: `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`
 - Update `README.md` + **this file** on major changes
 - Match existing cinematic / cyan UI language on public surfaces
 - Use `eventDisplayPath` / `getPublicBaseUrl` for links and QR
+- After schema changes: `npm run db:turso` on production
 
 **Don’t**
 
@@ -190,6 +206,7 @@ Seed-related: `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`
 - Call `notifyQueue` on every playback tick
 - Reintroduce sub-second polling
 - Put venue playback on the display page
+- Link the owner `/ops/…` URL from public pages or login
 - Commit secrets (`.env`, tokens)
 - Use interactive git (`-i`) or force-push `main` unless explicitly asked
 

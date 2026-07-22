@@ -63,6 +63,8 @@ npm run dev            # http://localhost:3000
 | `PUSHER_*` / `NEXT_PUBLIC_PUSHER_*` | Live votes / queue updates without aggressive polling |
 | `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | Production DB (required on Vercel) |
 | `MIN_SONG_SECONDS` | Filter Shorts/teasers (default `60`) |
+| `OWNER_PANEL_PATH` | Secret path segment for owner ops (`/ops/<path>`) — not linked publicly |
+| `OWNER_PASSWORD` | Owner ops passphrase |
 
 **YouTube key tip:** enable *YouTube Data API v3* in Google Cloud. Do **not** lock the key to HTTP referrers — it is used from the server. Prefer IP / API restriction.
 
@@ -76,8 +78,9 @@ npm run dev            # http://localhost:3000
 | `/e/{slug}` | Guests | Search, request, upvote · **Display** button → hall view |
 | `/e/{slug}/display` | Projector / TV | Now playing, QR, up next (silent) |
 | `/display?code=` | Legacy display | Same UI; prefer slug URL |
-| `/admin` | Organizer laptop | Moderate, play audio, settings, fallback |
+| `/admin` | Organizer laptop | Moderate, play audio, settings, change password, fallback |
 | `/organizer` | Organizer | List / switch / create events |
+| `/ops/{OWNER_PANEL_PATH}` | Site owner only | Hidden live ops: events, bans, top songs, reset organizer passwords |
 
 ### Local smoke test
 
@@ -102,6 +105,10 @@ npm run dev            # http://localhost:3000
 - Cinematic public UI (cyan / charcoal; art-tinted stage)
 - Pusher realtime with slow safety polling + in-flight request dedupe
 - Public QR always prefers custom domain (never `*.vercel.app`)
+- Admin **change password** in Settings (`POST /api/auth/password`)
+- Hidden **owner ops** console (`/ops/<OWNER_PANEL_PATH>`): live events, guest bans, daily top songs, organizer password reset
+- Daily play stats (`SongPlayStat`) pruned to **today only** (Turso-friendly)
+- Flutter **admin** app scaffold in [`apps/isw_wave_admin`](./apps/isw_wave_admin) (Bearer token auth)
 
 ---
 
@@ -117,6 +124,10 @@ npm run db:turso -- --reset  # destructive Turso reset → then db:seed
 npm run showcase:dev     # marketing site in ./showcase (if present)
 ```
 
+### Flutter admin app
+
+See [`apps/isw_wave_admin/README.md`](./apps/isw_wave_admin/README.md). Install Flutter, then `flutter create . --platforms=android,linux,windows` inside that folder once.
+
 ---
 
 ## Deployment (Vercel + Turso)
@@ -126,7 +137,7 @@ Vercel’s filesystem is ephemeral — **local SQLite will not persist**. Use Tu
 1. Create a Turso DB and set `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` on Vercel.
 2. Apply schema:  
    `TURSO_DATABASE_URL=… TURSO_AUTH_TOKEN=… npm run db:turso`
-3. Set also: `YOUTUBE_API_KEY`, `SESSION_SECRET`, `NEXT_PUBLIC_BASE_URL=https://isw-wave.isharaka.dev`, and Pusher keys.
+3. Set also: `YOUTUBE_API_KEY`, `SESSION_SECRET`, `NEXT_PUBLIC_BASE_URL=https://isw-wave.isharaka.dev`, Pusher keys, and optionally `OWNER_PANEL_PATH` + `OWNER_PASSWORD`.
 4. Attach custom domain `isw-wave.isharaka.dev`. Disable Deployment Protection for public guest/QR routes if guests would otherwise hit Vercel SSO.
 5. Redeploy after env changes.
 
@@ -137,9 +148,10 @@ Vercel’s filesystem is ephemeral — **local SQLite will not persist**. Use Tu
 ## Project map (high level)
 
 ```
-src/app/           # pages + API routes
-src/lib/           # db, auth, youtube, realtime, polling, player
+src/app/           # pages + API routes (incl. ops/, api/owner/)
+src/lib/           # db, auth, youtube, realtime, polling, player, song-play-stats
 src/components/    # UI (incl. cinematic/)
+apps/isw_wave_admin/  # Flutter control-room app (admin only)
 prisma/            # schema + migrations + seed
 scripts/           # turso-migrate, phase data helpers
 showcase/          # marketing site (optional nested / separate repo)

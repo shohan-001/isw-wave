@@ -94,6 +94,18 @@ export async function POST(req: Request) {
         },
       }));
 
+    if (participant.banned) {
+      return NextResponse.json(
+        {
+          error:
+            participant.banReason?.trim() ||
+            "You are banned from this event.",
+          banned: true,
+        },
+        { status: 403 }
+      );
+    }
+
     cookies().set(
       AUTH_COOKIE,
       signAuthToken("participant", participant.id),

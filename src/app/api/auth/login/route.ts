@@ -68,6 +68,10 @@ export async function POST(req: Request) {
       );
     }
 
+    const token = event
+      ? signAuthToken("admin", user.id, event.id)
+      : signAuthToken("admin", user.id);
+
     const authUser: AuthUser = {
       role: "admin",
       id: user.id,
@@ -77,7 +81,7 @@ export async function POST(req: Request) {
       eventSlug: event?.slug ?? "",
       isAdmin: true,
     };
-    return NextResponse.json({ user: authUser });
+    return NextResponse.json({ user: authUser, token });
   } catch (err) {
     console.error("[auth/login]", err);
     const message = err instanceof Error ? err.message : String(err);
