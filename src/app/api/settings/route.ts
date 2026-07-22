@@ -3,6 +3,11 @@ import { prisma } from "@/lib/db";
 import { generateAccessCode, requireAdmin } from "@/lib/auth";
 import type { Settings } from "@/lib/types";
 import { notifySettings } from "@/lib/realtime";
+import {
+  DEFAULT_ACCENT,
+  normalizeHex,
+  type DisplayMode,
+} from "@/lib/theme";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +20,9 @@ function toSettings(event: {
   maxSongSeconds: number;
   blockedKeywords: string;
   autoModMode: string;
+  accentColor: string;
+  logoUrl: string;
+  displayMode: string;
 }): Settings {
   return {
     eventId: event.id,
@@ -25,6 +33,9 @@ function toSettings(event: {
     maxSongSeconds: event.maxSongSeconds,
     blockedKeywords: event.blockedKeywords,
     autoModMode: event.autoModMode === "flag" ? "flag" : "reject",
+    accentColor: normalizeHex(event.accentColor) || DEFAULT_ACCENT,
+    logoUrl: event.logoUrl || "",
+    displayMode: event.displayMode === "minimal" ? "minimal" : "full",
   };
 }
 
@@ -57,6 +68,9 @@ export async function PATCH(req: Request) {
     maxSongSeconds?: number;
     blockedKeywords?: string;
     autoModMode?: string;
+    accentColor?: string;
+    logoUrl?: string;
+    displayMode?: DisplayMode;
   } = {};
 
   if (typeof body.requestLimit === "number") {
@@ -79,6 +93,22 @@ export async function PATCH(req: Request) {
   }
   if (body.autoModMode === "reject" || body.autoModMode === "flag") {
     data.autoModMode = body.autoModMode;
+  }
+  if (typeof body.accentColor === "string") {
+    const hex = normalizeHex(body.accentColor);
+    if (!hex) {
+      return NextResponse.json(
+        { error: "Accent color must be a 6-digit hex like #e0338f." },
+        { status: 400 }
+      );
+    }
+    data.accentColor = hex;
+  }
+  if (typeof body.logoUrl === "string") {
+    data.logoUrl = body.logoUrl.trim().slice(0, 500);
+  }
+  if (body.displayMode === "minimal" || body.displayMode === "full") {
+    data.displayMode = body.displayMode;
   }
   if (body.regenerateCode) {
     for (let i = 0; i < 5; i++) {

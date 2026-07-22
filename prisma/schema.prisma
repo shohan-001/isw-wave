@@ -30,6 +30,11 @@ model Event {
   blockedKeywords  String @default("") // comma / newline separated
   autoModMode      String @default("reject") // "reject" | "flag"
 
+  // Phase 4 — theming + display layout
+  accentColor String @default("#e0338f")
+  logoUrl     String @default("")
+  displayMode String @default("full") // "minimal" | "full"
+
   currentRequestId String? @unique
 
   createdAt DateTime @default(now())

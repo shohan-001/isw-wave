@@ -38,6 +38,9 @@ export type QueuePayload = {
   eventId: string;
   eventName: string;
   accessCode: string;
+  accentColor: string;
+  logoUrl: string;
+  displayMode: "minimal" | "full";
   nowPlaying: PublicRequest | null;
   queue: PublicRequest[];
 };
@@ -51,6 +54,20 @@ export type Settings = {
   maxSongSeconds: number;
   blockedKeywords: string;
   autoModMode: "reject" | "flag";
+  accentColor: string;
+  logoUrl: string;
+  displayMode: "minimal" | "full";
+};
+
+export type EventStats = {
+  totalRequests: number;
+  approved: number;
+  rejected: number;
+  pending: number;
+  played: number;
+  queueLength: number;
+  mostActiveRequester: string | null;
+  mostActiveCount: number;
 };
 
 export type FallbackTrack = {

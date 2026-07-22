@@ -164,9 +164,15 @@ export async function GET(req: Request) {
     where: { eventId: admin.eventId, status },
     orderBy:
       status === STATUS.APPROVED
-        ? { queuePosition: "asc" }
+        ? sort === "requester"
+          ? { requesterName: "asc" }
+          : sort === "time"
+          ? { createdAt: "asc" }
+          : { queuePosition: "asc" }
         : sort === "votes"
         ? [{ voteCount: "desc" }, { createdAt: "asc" }]
+        : sort === "requester"
+        ? [{ requesterName: "asc" }, { createdAt: "asc" }]
         : { createdAt: "asc" },
   });
   return NextResponse.json({ requests: rows.map((r) => toPublicRequest(r)) });

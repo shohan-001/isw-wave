@@ -17,6 +17,7 @@ export default async function AdminPage() {
     <AdminDashboard
       eventId={event.id}
       initialAccessCode={event.accessCode}
+      initialAccent={event.accentColor}
     />
   );
 }

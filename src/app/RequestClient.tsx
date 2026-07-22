@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { formatDuration, type AuthUser, type PublicRequest } from "@/lib/types";
 import type { SearchResult } from "@/lib/youtube";
 import { StatusBadge } from "@/components/StatusBadge";
+import { EventTheme } from "@/components/EventTheme";
 import {
   isClientRealtimeConfigured,
   useEventRealtime,
@@ -14,9 +15,13 @@ type Phase = "idle" | "searching" | "results";
 
 export function RequestClient({
   eventName,
+  accentColor,
+  logoUrl,
   user,
 }: {
   eventName: string;
+  accentColor: string;
+  logoUrl: string;
   user: Extract<AuthUser, { role: "participant" }>;
 }) {
   const [query, setQuery] = useState("");
@@ -207,12 +212,22 @@ export function RequestClient({
   }
 
   return (
+    <EventTheme accentColor={accentColor} className="min-h-screen">
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 pb-24 pt-6">
       {/* Branding + account */}
       <header className="mb-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <WaveMark />
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={logoUrl}
+                alt=""
+                className="h-8 max-h-[40px] w-auto object-contain"
+              />
+            ) : (
+              <WaveMark />
+            )}
             <span className="font-display text-sm font-medium uppercase tracking-[0.2em] text-wave-400">
               ISW Wave
             </span>
@@ -439,6 +454,7 @@ export function RequestClient({
       {/* Success burst */}
       <AnimatePresence>{justSubmitted && <SuccessBurst />}</AnimatePresence>
     </main>
+    </EventTheme>
   );
 }
 

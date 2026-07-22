@@ -5,8 +5,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useQueuePolling } from "@/lib/useQueuePolling";
 import { formatDuration } from "@/lib/types";
 import { QRCodeBlock } from "@/components/QRCodeBlock";
-import { EqualizerBars } from "@/components/EqualizerBars";
+import { EqualizerBars } from "@/components/EqualizerBars"; // EqualizerBars.tsx
 import { WaveBackground } from "@/components/WaveBackground";
+import { EventTheme } from "@/components/EventTheme";
 import { useDominantColor, rgb } from "@/lib/useDominantColor";
 
 // Big, high-contrast projector screen. Viewed from across a room, so type is
@@ -19,16 +20,28 @@ export function DisplayClient({
   accessCode,
   eventName,
   eventId,
+  accentColor,
+  logoUrl,
+  displayMode: initialDisplayMode,
 }: {
   requestUrl: string;
   accessCode: string;
   eventName: string;
   eventId: string;
+  accentColor: string;
+  logoUrl: string;
+  displayMode: "minimal" | "full";
 }) {
   const { data } = useQueuePolling(5000, { eventId });
   const now = data?.nowPlaying ?? null;
   const queue = data?.queue ?? [];
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  const themeAccent = data?.accentColor ?? accentColor;
+  const themeLogo = data?.logoUrl ?? logoUrl;
+  const displayMode =
+    (data?.displayMode ?? initialDisplayMode) === "minimal" ? "minimal" : "full";
+  const isMinimal = displayMode === "minimal";
 
   // Tint the whole scene (glow + waves) with the current artwork's color.
   const accent = useDominantColor(
@@ -42,7 +55,7 @@ export function DisplayClient({
     : 0;
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-ink">
+    <EventTheme accentColor={themeAccent} className="relative min-h-screen w-full overflow-hidden bg-ink">
       {/* Ambient color-adaptive glow. */}
       <div
         className="pointer-events-none absolute inset-0 transition-colors duration-1000"
@@ -56,6 +69,14 @@ export function DisplayClient({
 
       {/* Header */}
       <div className="relative z-10 flex items-center gap-3 px-10 pt-8">
+        {themeLogo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={themeLogo}
+            alt=""
+            className="h-10 max-h-[40px] w-auto object-contain"
+          />
+        ) : null}
         <span className="font-display text-xl font-medium uppercase tracking-[0.25em] text-wave-400">
           ISW Wave
         </span>
@@ -78,9 +99,13 @@ export function DisplayClient({
         </div>
       </div>
 
-      {/* CENTER STAGE: fanned card stack. Bottom padding leaves room for the
-          collapsed sheet so the hero is never cropped. */}
-      <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-8 pb-52 pt-4">
+      {/* CENTER STAGE: fanned card stack (full) or single hero (minimal).
+          Bottom padding leaves room for the collapsed sheet in full mode. */}
+      <div
+        className={`relative z-10 flex min-h-screen flex-col items-center justify-center px-8 pt-4 ${
+          isMinimal ? "pb-16" : "pb-52"
+        }`}
+      >
         <AnimatePresence mode="wait">
           {now ? (
             <motion.div
@@ -99,38 +124,40 @@ export function DisplayClient({
 
               {/* Card stack: queued tracks fan out behind the big hero card. */}
               <div className="relative flex h-[clamp(360px,56vh,720px)] w-full max-w-5xl items-center justify-center">
-                <AnimatePresence initial={false}>
-                  {queue.slice(0, 3).map((r, i) => {
-                    const depth = i + 1;
-                    const dir = depth % 2 === 0 ? -1 : 1;
-                    return (
-                      <motion.div
-                        key={r.id}
-                        layout
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{
-                          opacity: 0.5 - depth * 0.11,
-                          scale: 1 - depth * 0.08,
-                          x: dir * depth * 130,
-                          y: depth * 30,
-                          rotate: dir * depth * 3.5,
-                        }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        transition={{ type: "spring", damping: 24, stiffness: 180 }}
-                        style={{ zIndex: 10 - depth }}
-                        className="absolute aspect-video w-[74%] overflow-hidden rounded-3xl border border-white/10 shadow-glow-lg"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={hiRes(r.youtubeVideoId, r.thumbnailUrl)}
-                          alt=""
-                          className="h-full w-full object-cover"
-                        />
-                        <div className="absolute inset-0 bg-ink/45" />
-                      </motion.div>
-                    );
-                  })}
-                </AnimatePresence>
+                {!isMinimal && (
+                  <AnimatePresence initial={false}>
+                    {queue.slice(0, 3).map((r, i) => {
+                      const depth = i + 1;
+                      const dir = depth % 2 === 0 ? -1 : 1;
+                      return (
+                        <motion.div
+                          key={r.id}
+                          layout
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{
+                            opacity: 0.5 - depth * 0.11,
+                            scale: 1 - depth * 0.08,
+                            x: dir * depth * 130,
+                            y: depth * 30,
+                            rotate: dir * depth * 3.5,
+                          }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          transition={{ type: "spring", damping: 24, stiffness: 180 }}
+                          style={{ zIndex: 10 - depth }}
+                          className="absolute aspect-video w-[74%] overflow-hidden rounded-3xl border border-white/10 shadow-glow-lg"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={hiRes(r.youtubeVideoId, r.thumbnailUrl)}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-ink/45" />
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+                )}
 
                 {/* Hero card — big, front and center, pulsing glow on the beat. */}
                 <motion.div
@@ -143,7 +170,9 @@ export function DisplayClient({
                     zIndex: 20,
                     boxShadow: `0 0 ${70 + pulse * 70}px ${pulse * 6}px ${rgb(accent, 0.65)}`,
                   }}
-                  className="relative aspect-video w-[86%] overflow-hidden rounded-[2rem] border border-white/15"
+                  className={`relative aspect-video overflow-hidden rounded-[2rem] border border-white/15 ${
+                    isMinimal ? "w-[92%] max-w-6xl" : "w-[86%]"
+                  }`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -171,6 +200,20 @@ export function DisplayClient({
                   </div>
                 </motion.div>
               </div>
+
+              {/* Minimal mode has no bottom sheet — surface title under the hero. */}
+              {isMinimal && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-8 max-w-4xl px-4 text-center"
+                >
+                  <p className="font-display text-3xl font-bold text-white xl:text-4xl">
+                    {now.title}
+                  </p>
+                  <p className="mt-2 text-xl text-white/55">{now.channelName}</p>
+                </motion.div>
+              )}
             </motion.div>
           ) : (
             <motion.div
@@ -191,8 +234,8 @@ export function DisplayClient({
       </div>
 
       {/* BOTTOM SHEET: glass bar with the song name; click handle or drag up for
-          full details + queue. Collapsed height clears the hero above it. */}
-      {now && (
+          full details + queue. Hidden in minimal display mode. */}
+      {!isMinimal && now && (
         <motion.div
           drag="y"
           dragConstraints={{ top: 0, bottom: 0 }}
@@ -307,7 +350,7 @@ export function DisplayClient({
           </AnimatePresence>
         </motion.div>
       )}
-    </div>
+    </EventTheme>
   );
 }
 

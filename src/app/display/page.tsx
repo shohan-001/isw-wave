@@ -45,6 +45,9 @@ export default async function DisplayPage({
       accessCode={event.accessCode}
       eventName={event.name}
       eventId={event.id}
+      accentColor={event.accentColor}
+      logoUrl={event.logoUrl}
+      displayMode={event.displayMode === "minimal" ? "minimal" : "full"}
     />
   );
 }

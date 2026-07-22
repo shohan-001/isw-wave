@@ -17,6 +17,8 @@ export default async function RequestPage() {
   return (
     <RequestClient
       eventName={event.name}
+      accentColor={event.accentColor}
+      logoUrl={event.logoUrl}
       user={{
         role: "participant",
         id: user.id,

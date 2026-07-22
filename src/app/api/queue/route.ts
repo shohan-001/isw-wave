@@ -53,6 +53,9 @@ export async function GET(req: Request) {
     eventId: event.id,
     eventName: event.name,
     accessCode: event.accessCode,
+    accentColor: event.accentColor || "#e0338f",
+    logoUrl: event.logoUrl || "",
+    displayMode: event.displayMode === "minimal" ? "minimal" : "full",
     nowPlaying: nowPlaying ? toPublicRequest(nowPlaying) : null,
     queue: queue.map((r) => toPublicRequest(r)),
   };

@@ -52,25 +52,29 @@ export function useQueuePolling(
   }, [intervalMs, code, eventId, realtime]);
 
   const resolvedEventId = eventId || data?.eventId || null;
+  const refetchQueue = () => {
+    void (async () => {
+      try {
+        const params = new URLSearchParams();
+        if (code) params.set("code", code);
+        else if (resolvedEventId) params.set("eventId", resolvedEventId);
+        const qs = params.toString();
+        const res = await fetch(`/api/queue${qs ? `?${qs}` : ""}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        setData((await res.json()) as QueuePayload);
+        setError(false);
+      } catch {
+        /* ignore — next poll will retry */
+      }
+    })();
+  };
+
   useEventRealtime(resolvedEventId, {
-    "queue:update": () => {
-      void (async () => {
-        try {
-          const params = new URLSearchParams();
-          if (code) params.set("code", code);
-          else if (resolvedEventId) params.set("eventId", resolvedEventId);
-          const qs = params.toString();
-          const res = await fetch(`/api/queue${qs ? `?${qs}` : ""}`, {
-            cache: "no-store",
-          });
-          if (!res.ok) return;
-          setData((await res.json()) as QueuePayload);
-          setError(false);
-        } catch {
-          /* ignore — next poll will retry */
-        }
-      })();
-    },
+    "queue:update": refetchQueue,
+    // Theme/logo/displayMode live on the queue payload for public screens.
+    "settings:update": refetchQueue,
   });
 
   return { data, error, realtime };

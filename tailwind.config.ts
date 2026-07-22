@@ -1,11 +1,7 @@
 import type { Config } from "tailwindcss";
 
-// ISW Wave palette — a nightlife/event aesthetic:
-//   ink      : near-black violet backgrounds (dim room friendly)
-//   surface  : slightly lifted panels
-//   wave     : electric magenta→violet accent (primary action / brand)
-//   pulse    : cyan secondary accent (used sparingly for highlights)
-// Chosen deliberately to avoid the default indigo-on-white SaaS look.
+// wave / glow read --accent-rgb from EventTheme so per-event colors apply
+ // without rewriting every component. Defaults match the original magenta.
 const config: Config = {
   darkMode: "class",
   content: [
@@ -27,12 +23,12 @@ const config: Config = {
           raised: "#1f1a2e",
         },
         wave: {
-          DEFAULT: "#e0338f", // electric magenta
-          400: "#f45cae",
-          600: "#b81f74",
+          DEFAULT: "rgb(var(--accent-rgb) / <alpha-value>)",
+          400: "rgb(var(--accent-rgb) / 0.9)",
+          600: "rgb(var(--accent-rgb) / 0.7)",
         },
         pulse: {
-          DEFAULT: "#22d3ee", // cyan
+          DEFAULT: "#22d3ee",
           600: "#0891b2",
         },
       },
@@ -41,8 +37,8 @@ const config: Config = {
         sans: ["var(--font-body)", "system-ui", "sans-serif"],
       },
       boxShadow: {
-        glow: "0 0 40px -8px rgba(224, 51, 143, 0.55)",
-        "glow-lg": "0 0 80px -12px rgba(224, 51, 143, 0.6)",
+        glow: "0 0 40px -8px var(--accent-glow)",
+        "glow-lg": "0 0 80px -12px var(--accent-glow)",
       },
       keyframes: {
         shimmer: {
