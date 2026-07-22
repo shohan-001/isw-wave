@@ -27,6 +27,7 @@ export const metadata: Metadata = {
   applicationName: "ISW Wave",
   icons: {
     icon: [
+      { url: "/favicon.ico", sizes: "48x48" },
       { url: "/brand/favicon-48.png", sizes: "48x48", type: "image/png" },
       { url: "/brand/favicon.png", sizes: "192x192", type: "image/png" },
     ],
