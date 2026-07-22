@@ -274,9 +274,9 @@ function UpNextStrip({
               </span>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={r.thumbnailUrl}
+                src={hiRes(r.youtubeVideoId, r.thumbnailUrl)}
                 alt=""
-                className="h-11 w-11 shrink-0 rounded-lg object-cover"
+                className="h-12 w-20 shrink-0 rounded-lg object-cover sm:h-14 sm:w-24"
               />
               <div className="min-w-0 flex-1">
                 <p className="line-clamp-2 text-xs font-semibold leading-snug text-white sm:text-sm">

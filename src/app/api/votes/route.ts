@@ -3,11 +3,12 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { STATUS } from "@/lib/constants";
 import { toPublicRequest } from "@/lib/queries";
-import { notifyPending, notifyRequests } from "@/lib/realtime";
+import { notifyPending, notifyQueue, notifyRequests } from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
 
- // POST /api/votes  { requestId }  — toggle upvote (one per participant)
+// POST /api/votes  { requestId }  — toggle upvote (one per participant)
+// Allowed on pending (awaiting approval) and approved (in the live queue).
 export async function POST(req: Request) {
   const session = await getCurrentUser();
   if (!session || session.role !== "participant") {
@@ -21,14 +22,28 @@ export async function POST(req: Request) {
   }
 
   const target = await prisma.request.findUnique({ where: { id: requestId } });
-  if (
-    !target ||
-    target.eventId !== session.eventId ||
-    target.status !== STATUS.PENDING
-  ) {
+  if (!target || target.eventId !== session.eventId) {
+    return NextResponse.json({ error: "Request not found." }, { status: 404 });
+  }
+
+  const votable =
+    target.status === STATUS.PENDING || target.status === STATUS.APPROVED;
+  if (!votable) {
     return NextResponse.json(
-      { error: "Only pending requests for this event can be voted on." },
-      { status: 404 }
+      { error: "Only pending or queued songs can be voted on." },
+      { status: 400 }
+    );
+  }
+
+  // Don't bump the track that's already on stage.
+  const event = await prisma.event.findUnique({
+    where: { id: session.eventId },
+    select: { currentRequestId: true },
+  });
+  if (event?.currentRequestId === requestId) {
+    return NextResponse.json(
+      { error: "That song is already playing." },
+      { status: 400 }
     );
   }
 
@@ -68,7 +83,6 @@ export async function POST(req: Request) {
     where: { id: requestId },
   });
 
-  // Clamp accidental negatives from races.
   if (updated.voteCount < 0) {
     await prisma.request.update({
       where: { id: requestId },
@@ -77,10 +91,15 @@ export async function POST(req: Request) {
     updated.voteCount = 0;
   }
 
-  await Promise.all([
+  const fanout = [
     notifyPending(session.eventId),
     notifyRequests(session.eventId),
-  ]);
+  ];
+  // Live display reorders by votes when the queue changes.
+  if (updated.status === STATUS.APPROVED) {
+    fanout.push(notifyQueue(session.eventId));
+  }
+  await Promise.all(fanout);
 
   return NextResponse.json({
     request: toPublicRequest(updated, { iVoted }),

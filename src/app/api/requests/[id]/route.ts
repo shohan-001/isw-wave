@@ -151,13 +151,18 @@ async function advanceToNext(
   eventId: string,
   excludeId: string
 ): Promise<string | null> {
+  // Most-voted queued song wins; ties fall back to queue position.
   const next = await prisma.request.findFirst({
     where: {
       eventId,
       status: STATUS.APPROVED,
       id: { not: excludeId },
     },
-    orderBy: { queuePosition: "asc" },
+    orderBy: [
+      { voteCount: "desc" },
+      { queuePosition: "asc" },
+      { createdAt: "asc" },
+    ],
   });
   await prisma.event.update({
     where: { id: eventId },

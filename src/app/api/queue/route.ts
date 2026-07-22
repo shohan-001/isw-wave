@@ -84,7 +84,8 @@ export async function GET(req: Request) {
       status: STATUS.APPROVED,
       id: event.currentRequestId ? { not: event.currentRequestId } : undefined,
     },
-    orderBy: { queuePosition: "asc" },
+    // Highest votes first; equal votes keep admin queue order.
+    orderBy: [{ voteCount: "desc" }, { queuePosition: "asc" }, { createdAt: "asc" }],
   });
 
   const payload: QueuePayload = {
