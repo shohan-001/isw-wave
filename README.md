@@ -5,7 +5,7 @@ Live song-request platform for campus events, hack nights, and parties.
 Guests scan a QR code, search YouTube, request tracks, and upvote the queue. Organizers moderate in a control room and drive **venue audio** from the admin laptop. A hall **display** stays silent and shows now playing, up next, and the join QR.
 
 **Live app:** [isw-wave.isharaka.dev](https://isw-wave.isharaka.dev)  
-**Showcase:** [wave.isharaka.dev](https://wave.isharaka.dev) · 
+**Showcase:** [wave.isharaka.dev](https://wave.isharaka.dev)
 **Author:** Isharaka Shohan
 
 > For AI / coding agents: read **[`AGENTS.md`](./AGENTS.md)** first. Update it after every major change.
@@ -130,7 +130,7 @@ Vercel’s filesystem is ephemeral — **local SQLite will not persist**. Use Tu
 4. Attach custom domain `isw-wave.isharaka.dev`. Disable Deployment Protection for public guest/QR routes if guests would otherwise hit Vercel SSO.
 5. Redeploy after env changes.
 
-**Showcase / portfolio landing** lives in [`showcase/`](./showcase) (or the separate [`isw-wave-showcase`](https://github.com/shohan-001/isw-wave-showcase) repo) at `wave.isharaka.dev`. Deploy it as its **own** Vercel project.
+**Showcase / portfolio landing** lives in [`showcase/`](./showcase) at `wave.isharaka.dev`. Deploy it as its **own** Vercel project.
 
 ---
 
