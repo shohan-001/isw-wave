@@ -13,6 +13,8 @@ import {
   isClientRealtimeConfigured,
   useEventRealtime,
 } from "@/lib/useEventRealtime";
+import { eventDisplayPath } from "@/lib/slug";
+import Link from "next/link";
 
 type Phase = "idle" | "searching" | "results";
 
@@ -290,8 +292,17 @@ export function RequestClient({
               </span>
             </div>
             <div className="flex shrink-0 items-center gap-2 text-xs">
-              <span className="truncate text-white/40">{user.displayName}</span>
+              <span className="max-w-[5.5rem] truncate text-white/40 sm:max-w-none">
+                {user.displayName}
+              </span>
+              <Link
+                href={eventDisplayPath(user.eventSlug)}
+                className="rounded-full bg-pulse/15 px-3 py-1.5 font-medium text-pulse transition active:scale-95"
+              >
+                Display
+              </Link>
               <button
+                type="button"
                 onClick={logout}
                 className="rounded-full bg-white/[0.06] px-3 py-1.5 font-medium text-white/50 transition active:scale-95"
               >
