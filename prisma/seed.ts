@@ -5,7 +5,11 @@ import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { resolveDbConfig } from "../src/lib/db-config";
 
-const adapter = new PrismaLibSQL(resolveDbConfig());
+const db = resolveDbConfig();
+const adapter = new PrismaLibSQL({
+  url: db.url,
+  authToken: db.authToken,
+});
 const prisma = new PrismaClient({ adapter });
 
 const EVENT_ID = "isw-wave-main-event";

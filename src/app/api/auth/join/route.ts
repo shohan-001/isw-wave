@@ -110,9 +110,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ user: authUser });
   } catch (err) {
     console.error("[auth/join]", err);
-    return NextResponse.json(
-      { error: "Server error while joining. Try again." },
-      { status: 500 }
-    );
+    const message = err instanceof Error ? err.message : String(err);
+    const hint = /401|unauthorized/i.test(message)
+      ? "Database auth failed (Turso 401). Update TURSO_AUTH_TOKEN on Vercel and redeploy."
+      : /TURSO_DATABASE_URL/i.test(message)
+      ? message
+      : "Server error while joining. Try again.";
+    return NextResponse.json({ error: hint }, { status: 500 });
   }
 }
