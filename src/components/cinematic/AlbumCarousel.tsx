@@ -16,7 +16,7 @@ function artSrc(t: CarouselTrack): string {
     : t.thumbnailUrl;
 }
 
-/** 3D-ish album fan — now playing center, up-next angled behind. */
+/** 3D-ish album fan — larger center cover for projector readability. */
 export function AlbumCarousel({
   now,
   upNext,
@@ -32,8 +32,8 @@ export function AlbumCarousel({
 
   return (
     <div
-      className="relative mx-auto flex h-[min(52vw,340px)] w-full max-w-lg items-center justify-center sm:h-[360px] lg:h-[400px]"
-      style={{ perspective: 900 }}
+      className="relative mx-auto flex h-[min(62vw,420px)] w-full max-w-2xl items-center justify-center sm:h-[440px] lg:h-[500px] xl:h-[540px]"
+      style={{ perspective: 1000 }}
     >
       <AnimatePresence initial={false}>
         {sides.map((t, i) => {
@@ -44,16 +44,16 @@ export function AlbumCarousel({
               key={t.id}
               initial={{ opacity: 0, scale: 0.85 }}
               animate={{
-                opacity: 0.4 - depth * 0.08,
-                scale: 0.78 - depth * 0.04,
-                x: dir * (depth * 72 + 28),
-                y: depth * 14,
-                rotateY: dir * -18,
-                rotateZ: dir * 4,
+                opacity: 0.38 - depth * 0.06,
+                scale: 0.72 - depth * 0.04,
+                x: dir * (depth * 88 + 36),
+                y: depth * 16,
+                rotateY: dir * -16,
+                rotateZ: dir * 3.5,
               }}
               exit={{ opacity: 0 }}
               transition={{ type: "spring", stiffness: 120, damping: 18 }}
-              className="absolute aspect-square w-[58%] overflow-hidden rounded-[1.75rem] sm:w-[52%]"
+              className="absolute aspect-square w-[54%] overflow-hidden rounded-[1.75rem] sm:w-[48%]"
               style={{
                 zIndex: 5 - depth,
                 transformStyle: "preserve-3d",
@@ -78,9 +78,9 @@ export function AlbumCarousel({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}
         transition={{ type: "spring", stiffness: 140, damping: 18 }}
-        className="relative z-10 aspect-square w-[72%] overflow-hidden rounded-[2rem] sm:w-[64%] sm:rounded-[2.25rem]"
+        className="relative z-10 aspect-square w-[84%] overflow-hidden rounded-[2rem] sm:w-[76%] sm:rounded-[2.5rem] lg:w-[72%]"
         style={{
-          boxShadow: `0 0 ${36 + pulse * 48}px ${pulse * 6}px ${rgb(accent, 0.45)}, 0 32px 64px -24px rgba(0,0,0,0.75)`,
+          boxShadow: `0 0 ${40 + pulse * 52}px ${pulse * 7}px ${rgb(accent, 0.5)}, 0 36px 72px -24px rgba(0,0,0,0.8)`,
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -89,7 +89,7 @@ export function AlbumCarousel({
           alt={now.title}
           className="h-full w-full object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-ink/50 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-ink/55 via-transparent to-transparent" />
       </motion.div>
     </div>
   );
