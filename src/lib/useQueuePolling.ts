@@ -3,21 +3,30 @@
 import { useEffect, useRef, useState } from "react";
 import type { QueuePayload } from "@/lib/types";
 
-// Poll /api/queue every `intervalMs` (default 5s). Both the Display page and the
-// Admin dashboard use this to stay in sync.
-// TODO(Phase 3): replace this polling with a WebSocket subscription — the
-// consuming components only depend on the returned QueuePayload shape, so the
-// swap is isolated to this hook.
-export function useQueuePolling(intervalMs = 5000) {
+ // Poll /api/queue every `intervalMs`. Pass code or eventId so simultaneous
+ // events stay isolated (display uses code; admin uses session fallback).
+ // TODO(Phase 3): replace polling with a WebSocket subscription.
+export function useQueuePolling(
+  intervalMs = 5000,
+  opts?: { code?: string | null; eventId?: string | null }
+) {
   const [data, setData] = useState<QueuePayload | null>(null);
   const [error, setError] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const code = opts?.code ?? null;
+  const eventId = opts?.eventId ?? null;
 
   useEffect(() => {
     let active = true;
     async function tick() {
       try {
-        const res = await fetch("/api/queue", { cache: "no-store" });
+        const params = new URLSearchParams();
+        if (code) params.set("code", code);
+        else if (eventId) params.set("eventId", eventId);
+        const qs = params.toString();
+        const res = await fetch(`/api/queue${qs ? `?${qs}` : ""}`, {
+          cache: "no-store",
+        });
         if (!res.ok) throw new Error();
         const json = (await res.json()) as QueuePayload;
         if (active) {
@@ -34,7 +43,7 @@ export function useQueuePolling(intervalMs = 5000) {
       active = false;
       if (timer.current) clearInterval(timer.current);
     };
-  }, [intervalMs]);
+  }, [intervalMs, code, eventId]);
 
   return { data, error };
 }

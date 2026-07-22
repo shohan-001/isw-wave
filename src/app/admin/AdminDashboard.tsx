@@ -6,14 +6,21 @@ import { useQueuePolling } from "@/lib/useQueuePolling";
 import { useYouTubePlayer } from "@/lib/useYouTubePlayer";
 import { formatDuration, type PublicRequest, type Settings } from "@/lib/types";
 
-export function AdminDashboard() {
-  const { data } = useQueuePolling(5000);
+export function AdminDashboard({
+  eventId,
+  initialAccessCode,
+}: {
+  eventId: string;
+  initialAccessCode: string;
+}) {
+  const { data } = useQueuePolling(5000, { eventId });
   const now = data?.nowPlaying ?? null;
   const queue = data?.queue ?? [];
 
   const [pending, setPending] = useState<PublicRequest[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [codeBusy, setCodeBusy] = useState(false);
 
   // Poll pending requests every 5s (separate from the public queue endpoint).
   const loadPending = useCallback(async () => {
@@ -84,7 +91,9 @@ export function AdminDashboard() {
     }
   }
 
-  async function updateSettings(patch: Partial<Settings>) {
+  async function updateSettings(
+    patch: Partial<Settings> & { regenerateCode?: boolean }
+  ) {
     const res = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -96,10 +105,22 @@ export function AdminDashboard() {
     }
   }
 
+  async function regenerateCode() {
+    setCodeBusy(true);
+    try {
+      await updateSettings({ regenerateCode: true });
+    } finally {
+      setCodeBusy(false);
+    }
+  }
+
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
   }
+
+  const accessCode = settings?.accessCode ?? initialAccessCode;
+  const displayHref = `/display?code=${encodeURIComponent(accessCode)}`;
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-6">
@@ -113,7 +134,7 @@ export function AdminDashboard() {
         </div>
         <div className="flex items-center gap-3">
           <a
-            href="/display"
+            href={displayHref}
             target="_blank"
             className="rounded-xl border border-white/10 px-4 py-2 text-sm font-medium text-white/70 transition hover:border-pulse/40"
           >
@@ -376,6 +397,27 @@ export function AdminDashboard() {
               <h2 className="mb-4 font-display text-lg font-semibold text-white">
                 Settings
               </h2>
+
+              <div className="mb-4 rounded-2xl border border-wave/30 bg-wave/10 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-wave-400">
+                  Event code
+                </p>
+                <p className="mt-1 font-display text-3xl font-bold tracking-[0.2em] text-white">
+                  {settings.accessCode}
+                </p>
+                <p className="mt-2 text-xs text-white/45">
+                  Show this on the display with the QR. Guests join with their
+                  name + this code — no signup.
+                </p>
+                <button
+                  type="button"
+                  disabled={codeBusy}
+                  onClick={regenerateCode}
+                  className="mt-3 rounded-lg border border-white/15 px-3 py-1.5 text-xs font-semibold text-white/70 transition hover:text-white disabled:opacity-50"
+                >
+                  {codeBusy ? "Generating…" : "Generate new code"}
+                </button>
+              </div>
 
               <div className="flex items-center justify-between gap-4 py-2">
                 <div>

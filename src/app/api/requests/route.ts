@@ -1,26 +1,22 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { EVENT_ID, STATUS } from "@/lib/constants";
+import { STATUS } from "@/lib/constants";
 import { getCurrentUser, requireAdmin } from "@/lib/auth";
 import {
-  getEvent,
   countActiveRequests,
   nextQueuePosition,
   toPublicRequest,
+  requireEventById,
 } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-// POST /api/requests
-// Body: { youtubeVideoId, title, thumbnailUrl, durationSeconds, channelName }
-// Creates a request for the logged-in user. Enforces the per-user active limit
-// (Event.requestLimit) server-side, keyed by userId so it survives cookie loss.
-// The requester name is taken from the account (username), not the request body.
+ // POST /api/requests — participant creates a song request for their event.
 export async function POST(req: Request) {
-  const user = await getCurrentUser();
-  if (!user) {
+  const session = await getCurrentUser();
+  if (!session || session.role !== "participant") {
     return NextResponse.json(
-      { error: "Please log in to request a song." },
+      { error: "Join the event with your name and code to request a song." },
       { status: 401 }
     );
   }
@@ -37,10 +33,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const event = await getEvent();
-
-  // Enforce the configurable per-user active-request limit (keyed by userId).
-  const active = await countActiveRequests(user.id);
+  const event = await requireEventById(session.eventId);
+  const active = await countActiveRequests(event.id, session.id);
   if (active >= event.requestLimit) {
     return NextResponse.json(
       {
@@ -56,16 +50,16 @@ export async function POST(req: Request) {
   const autoApprove = event.approvalMode === "auto";
   const created = await prisma.request.create({
     data: {
-      eventId: EVENT_ID,
+      eventId: event.id,
       youtubeVideoId: body.youtubeVideoId,
       title: body.title.slice(0, 200),
       thumbnailUrl: body.thumbnailUrl || "",
       durationSeconds: Math.max(0, Math.floor(body.durationSeconds || 0)),
       channelName: (body.channelName || "").slice(0, 100),
-      userId: user.id,
-      requesterName: user.username,
+      participantId: session.id,
+      requesterName: session.displayName,
       status: autoApprove ? STATUS.APPROVED : STATUS.PENDING,
-      queuePosition: autoApprove ? await nextQueuePosition() : null,
+      queuePosition: autoApprove ? await nextQueuePosition(event.id) : null,
     },
   });
 
@@ -79,24 +73,24 @@ export async function POST(req: Request) {
   );
 }
 
-// GET /api/requests?mine=1        -> current user's own requests + quota
-// GET /api/requests?status=...    -> admin: list by status (default pending)
+ // GET /api/requests?mine=1        -> participant's own requests + quota
+ // GET /api/requests?status=...    -> admin: list by status for their event
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const mine = searchParams.get("mine");
 
   if (mine) {
-    const user = await getCurrentUser();
-    if (!user) {
+    const session = await getCurrentUser();
+    if (!session || session.role !== "participant") {
       return NextResponse.json({ requests: [], used: 0, limit: 0 });
     }
     const [rows, event, active] = await Promise.all([
       prisma.request.findMany({
-        where: { eventId: EVENT_ID, userId: user.id },
+        where: { eventId: session.eventId, participantId: session.id },
         orderBy: { createdAt: "desc" },
       }),
-      getEvent(),
-      countActiveRequests(user.id),
+      requireEventById(session.eventId),
+      countActiveRequests(session.eventId, session.id),
     ]);
     return NextResponse.json({
       requests: rows.map(toPublicRequest),
@@ -105,13 +99,13 @@ export async function GET(req: Request) {
     });
   }
 
-  // Admin-only listing.
-  if (!(await requireAdmin())) {
+  const admin = await requireAdmin();
+  if (!admin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const status = searchParams.get("status") || STATUS.PENDING;
   const rows = await prisma.request.findMany({
-    where: { eventId: EVENT_ID, status },
+    where: { eventId: admin.eventId, status },
     orderBy:
       status === STATUS.APPROVED
         ? { queuePosition: "asc" }

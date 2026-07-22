@@ -14,8 +14,18 @@ import { useDominantColor, rgb } from "@/lib/useDominantColor";
 // player embed here (the admin device owns venue audio). Because there is no
 // audio stream on this device, the "beat" pulse and elapsed timeline are
 // simulated locally (real playback position is a Phase 3 WebSocket concern).
-export function DisplayClient({ requestUrl }: { requestUrl: string }) {
-  const { data } = useQueuePolling(5000);
+export function DisplayClient({
+  requestUrl,
+  accessCode,
+  eventName,
+  eventId,
+}: {
+  requestUrl: string;
+  accessCode: string;
+  eventName: string;
+  eventId: string;
+}) {
+  const { data } = useQueuePolling(5000, { eventId });
   const now = data?.nowPlaying ?? null;
   const queue = data?.queue ?? [];
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -50,12 +60,22 @@ export function DisplayClient({ requestUrl }: { requestUrl: string }) {
           ISW Wave
         </span>
         <span className="text-white/30">·</span>
-        <span className="text-xl text-white/50">{data?.eventName ?? ""}</span>
+        <span className="text-xl text-white/50">
+          {data?.eventName ?? eventName}
+        </span>
       </div>
 
-      {/* QR — top right */}
-      <div className="absolute right-10 top-8 z-20">
+      {/* QR + event code — top right (hero of the join flow) */}
+      <div className="absolute right-10 top-8 z-20 flex flex-col items-end gap-4">
         <QRCodeBlock url={requestUrl} />
+        <div className="rounded-2xl border border-white/15 bg-ink/70 px-5 py-3 text-center backdrop-blur-md">
+          <p className="font-display text-xs font-medium uppercase tracking-[0.25em] text-white/45">
+            Event code
+          </p>
+          <p className="mt-1 font-display text-3xl font-bold tracking-[0.2em] text-white">
+            {data?.accessCode ?? accessCode}
+          </p>
+        </div>
       </div>
 
       {/* CENTER STAGE: fanned card stack. Bottom padding leaves room for the

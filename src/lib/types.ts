@@ -1,12 +1,22 @@
 // Shared types + tiny helpers usable on client and server (no server-only deps).
 
-// Client-safe view of the logged-in account (never includes the password hash).
-export type AuthUser = {
-  id: string;
-  username: string;
-  email: string;
-  isAdmin: boolean;
-};
+ // Client-safe view of the current session (admin or participant).
+export type AuthUser =
+  | {
+      role: "admin";
+      id: string;
+      username: string;
+      email: string;
+      eventId: string;
+      isAdmin: true;
+    }
+  | {
+      role: "participant";
+      id: string;
+      displayName: string;
+      eventId: string;
+      isAdmin: false;
+    };
 
 export type PublicRequest = {
   id: string;
@@ -22,7 +32,9 @@ export type PublicRequest = {
 };
 
 export type QueuePayload = {
+  eventId: string;
   eventName: string;
+  accessCode: string;
   nowPlaying: PublicRequest | null;
   queue: PublicRequest[]; // approved, in play order
 };
@@ -30,9 +42,12 @@ export type QueuePayload = {
 export type Settings = {
   requestLimit: number;
   approvalMode: "manual" | "auto";
+  accessCode: string;
+  eventName: string;
+  eventId: string;
 };
 
-// Format seconds as m:ss (or h:mm:ss for long videos).
+ // Format seconds as m:ss (or h:mm:ss for long videos).
 export function formatDuration(total: number): string {
   if (!total || total < 0) return "0:00";
   const h = Math.floor(total / 3600);

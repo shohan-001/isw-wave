@@ -1,45 +1,88 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { EVENT_ID } from "@/lib/constants";
-import { requireAdmin } from "@/lib/auth";
-import { getEvent } from "@/lib/queries";
+import { generateAccessCode, requireAdmin } from "@/lib/auth";
 import type { Settings } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/settings  (admin only) — current event settings for the admin panel.
-export async function GET() {
-  if (!(await requireAdmin())) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const event = await getEvent();
-  const settings: Settings = {
+function toSettings(event: {
+  id: string;
+  name: string;
+  requestLimit: number;
+  approvalMode: string;
+  accessCode: string;
+}): Settings {
+  return {
+    eventId: event.id,
+    eventName: event.name,
     requestLimit: event.requestLimit,
     approvalMode: event.approvalMode as Settings["approvalMode"],
+    accessCode: event.accessCode,
   };
-  return NextResponse.json({ settings, eventName: event.name });
 }
 
-// PATCH /api/settings  (admin only)
-// Body: { requestLimit?, approvalMode? }
-export async function PATCH(req: Request) {
-  if (!(await requireAdmin())) {
+export async function GET() {
+  const admin = await requireAdmin();
+  if (!admin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const body = (await req.json().catch(() => ({}))) as Partial<Settings>;
+  const event = await prisma.event.findUniqueOrThrow({
+    where: { id: admin.eventId },
+  });
+  return NextResponse.json({ settings: toSettings(event) });
+}
 
-  const data: { requestLimit?: number; approvalMode?: string } = {};
+ // PATCH /api/settings
+ // Body: { requestLimit?, approvalMode?, regenerateCode?, eventName? }
+export async function PATCH(req: Request) {
+  const admin = await requireAdmin();
+  if (!admin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = (await req.json().catch(() => ({}))) as Partial<Settings> & {
+    regenerateCode?: boolean;
+  };
+
+  const data: {
+    requestLimit?: number;
+    approvalMode?: string;
+    accessCode?: string;
+    name?: string;
+  } = {};
+
   if (typeof body.requestLimit === "number") {
     data.requestLimit = Math.min(20, Math.max(1, Math.floor(body.requestLimit)));
   }
   if (body.approvalMode === "manual" || body.approvalMode === "auto") {
     data.approvalMode = body.approvalMode;
   }
+  if (typeof body.eventName === "string" && body.eventName.trim()) {
+    data.name = body.eventName.trim().slice(0, 80);
+  }
+  if (body.regenerateCode) {
+    // Retry a few times in the unlikely event of a code collision.
+    for (let i = 0; i < 5; i++) {
+      const candidate = generateAccessCode();
+      const clash = await prisma.event.findUnique({
+        where: { accessCode: candidate },
+      });
+      if (!clash) {
+        data.accessCode = candidate;
+        break;
+      }
+    }
+    if (!data.accessCode) {
+      return NextResponse.json(
+        { error: "Could not generate a unique code. Try again." },
+        { status: 500 }
+      );
+    }
+  }
 
-  const event = await prisma.event.update({ where: { id: EVENT_ID }, data });
-  const settings: Settings = {
-    requestLimit: event.requestLimit,
-    approvalMode: event.approvalMode as Settings["approvalMode"],
-  };
-  return NextResponse.json({ settings });
+  const event = await prisma.event.update({
+    where: { id: admin.eventId },
+    data,
+  });
+  return NextResponse.json({ settings: toSettings(event) });
 }

@@ -1,34 +1,21 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { EVENT_ID, STATUS } from "@/lib/constants";
+import { STATUS } from "@/lib/constants";
 import { requireAdmin } from "@/lib/auth";
-import { getEvent, nextQueuePosition, toPublicRequest } from "@/lib/queries";
+import { nextQueuePosition, toPublicRequest } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-// PATCH /api/requests/:id   (admin only)
-// Body: { action: "approve" | "reject" | "remove" | "move" | "play" | "next" ,
-//         direction?: "up" | "down" }
-//
-// - approve : pending -> approved, appended to the end of the queue
-// - reject  : -> rejected, removed from the queue
-// - remove  : approved -> rejected (skip/remove a queued song)
-// - move    : swap queue position with the up/down neighbour
-// - play    : make this the "Now Playing" song (Event.currentRequestId)
-// - next    : mark the current Now Playing as played and advance to the next
-//             queued song (auto-advance / "Mark as Played")
-//
-// "Now Playing" is tracked by Event.currentRequestId. The current song keeps
-// status "approved" while it plays; the queue endpoint excludes it. When it
-// finishes we set it to "played" and point currentRequestId at the next song.
 export async function PATCH(
   req: Request,
   { params }: { params: { id: string } }
 ) {
-  if (!(await requireAdmin())) {
+  const admin = await requireAdmin();
+  if (!admin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const eventId = admin.eventId;
   const id = params.id;
   const body = (await req.json().catch(() => ({}))) as {
     action?: string;
@@ -37,7 +24,7 @@ export async function PATCH(
   const action = body.action;
 
   const target = await prisma.request.findUnique({ where: { id } });
-  if (!target || target.eventId !== EVENT_ID) {
+  if (!target || target.eventId !== eventId) {
     return NextResponse.json({ error: "Request not found" }, { status: 404 });
   }
 
@@ -45,17 +32,21 @@ export async function PATCH(
     case "approve": {
       const updated = await prisma.request.update({
         where: { id },
-        data: { status: STATUS.APPROVED, queuePosition: await nextQueuePosition() },
+        data: {
+          status: STATUS.APPROVED,
+          queuePosition: await nextQueuePosition(eventId),
+        },
       });
       return NextResponse.json({ request: toPublicRequest(updated) });
     }
 
     case "reject":
     case "remove": {
-      // If we're removing the song that is currently playing, advance first.
-      const event = await getEvent();
+      const event = await prisma.event.findUniqueOrThrow({
+        where: { id: eventId },
+      });
       if (event.currentRequestId === id) {
-        await advanceToNext(id);
+        await advanceToNext(eventId, id);
       }
       const updated = await prisma.request.update({
         where: { id },
@@ -74,7 +65,7 @@ export async function PATCH(
       const dir = body.direction;
       const neighbor = await prisma.request.findFirst({
         where: {
-          eventId: EVENT_ID,
+          eventId,
           status: STATUS.APPROVED,
           queuePosition:
             dir === "up"
@@ -84,10 +75,8 @@ export async function PATCH(
         orderBy: { queuePosition: dir === "up" ? "desc" : "asc" },
       });
       if (!neighbor || neighbor.queuePosition == null) {
-        // Already at the edge; no-op.
         return NextResponse.json({ request: toPublicRequest(target) });
       }
-      // Swap positions in a transaction.
       await prisma.$transaction([
         prisma.request.update({
           where: { id: target.id },
@@ -103,7 +92,6 @@ export async function PATCH(
     }
 
     case "play": {
-      // Jump to a specific song as Now Playing. It must be approved.
       if (target.status !== STATUS.APPROVED) {
         return NextResponse.json(
           { error: "Only approved songs can be played." },
@@ -111,15 +99,14 @@ export async function PATCH(
         );
       }
       await prisma.event.update({
-        where: { id: EVENT_ID },
+        where: { id: eventId },
         data: { currentRequestId: id },
       });
       return NextResponse.json({ ok: true });
     }
 
     case "next": {
-      // Mark the current Now Playing (the target) as played, advance to next.
-      const nextId = await advanceToNext(id);
+      const nextId = await advanceToNext(eventId, id);
       await prisma.request.update({
         where: { id },
         data: { status: STATUS.PLAYED, queuePosition: null },
@@ -132,19 +119,20 @@ export async function PATCH(
   }
 }
 
-// Set Event.currentRequestId to the next queued (approved) song after
-// `excludeId`, or null if the queue is empty. Returns the new current id.
-async function advanceToNext(excludeId: string): Promise<string | null> {
+async function advanceToNext(
+  eventId: string,
+  excludeId: string
+): Promise<string | null> {
   const next = await prisma.request.findFirst({
     where: {
-      eventId: EVENT_ID,
+      eventId,
       status: STATUS.APPROVED,
       id: { not: excludeId },
     },
     orderBy: { queuePosition: "asc" },
   });
   await prisma.event.update({
-    where: { id: EVENT_ID },
+    where: { id: eventId },
     data: { currentRequestId: next?.id ?? null },
   });
   return next?.id ?? null;

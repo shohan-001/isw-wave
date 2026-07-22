@@ -13,7 +13,7 @@ export function RequestClient({
   user,
 }: {
   eventName: string;
-  user: AuthUser;
+  user: Extract<AuthUser, { role: "participant" }>;
 }) {
   const [query, setQuery] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
@@ -103,7 +103,7 @@ export function RequestClient({
       thumbnailUrl: selected.thumbnailUrl,
       durationSeconds: selected.durationSeconds,
       channelName: selected.channelName,
-      requesterName: user.username,
+      requesterName: user.displayName,
       status: "pending",
       queuePosition: null,
       createdAt: new Date().toISOString(),
@@ -162,20 +162,12 @@ export function RequestClient({
             </span>
           </div>
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-white/45">@{user.username}</span>
-            {user.isAdmin && (
-              <a
-                href="/admin"
-                className="rounded-full border border-pulse/40 px-2.5 py-1 font-semibold text-pulse transition active:scale-95"
-              >
-                Control room
-              </a>
-            )}
+            <span className="text-white/45">{user.displayName}</span>
             <button
               onClick={logout}
               className="rounded-full border border-white/10 px-2.5 py-1 font-medium text-white/50 transition active:scale-95"
             >
-              Log out
+              Leave
             </button>
           </div>
         </div>
@@ -320,7 +312,7 @@ export function RequestClient({
       {/* Confirm sheet */}
       <ConfirmSheet
         selected={selected}
-        username={user.username}
+        displayName={user.displayName}
         submitting={submitting}
         atLimit={atLimit}
         error={submitError}
@@ -421,7 +413,7 @@ function ResultSkeletons() {
 
 function ConfirmSheet({
   selected,
-  username,
+  displayName,
   submitting,
   atLimit,
   error,
@@ -429,7 +421,7 @@ function ConfirmSheet({
   onConfirm,
 }: {
   selected: SearchResult | null;
-  username: string;
+  displayName: string;
   submitting: boolean;
   atLimit: boolean;
   error: string | null;
@@ -472,7 +464,7 @@ function ConfirmSheet({
 
             <p className="mt-5 rounded-xl border border-white/10 bg-surface/60 px-4 py-3 text-sm text-white/70">
               Requesting as{" "}
-              <span className="font-semibold text-white">@{username}</span>
+              <span className="font-semibold text-white">{displayName}</span>
             </p>
 
             {error && <p className="mt-3 text-sm text-red-300">{error}</p>}

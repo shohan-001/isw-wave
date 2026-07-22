@@ -1,12 +1,52 @@
 import { DisplayClient } from "./DisplayClient";
+import { normalizeAccessCode } from "@/lib/auth";
+import { getEventByAccessCode, getEventById } from "@/lib/queries";
+import { getCurrentUser } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
-// Public projector/display page (server shell). Passes the request-page URL for
-// the QR code. This screen is INFORMATIONAL and SILENT — it never produces
-// audio. The admin dashboard drives venue audio (see the admin player).
 export const dynamic = "force-dynamic";
 
-export default function DisplayPage() {
+export default async function DisplayPage({
+  searchParams,
+}: {
+  searchParams?: { code?: string; eventId?: string };
+}) {
   const baseUrl =
     process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-  return <DisplayClient requestUrl={baseUrl} />;
+
+  let accessCode = searchParams?.code
+    ? normalizeAccessCode(searchParams.code)
+    : "";
+  let eventId = searchParams?.eventId || "";
+
+  if (!accessCode && !eventId) {
+    const session = await getCurrentUser();
+    if (session?.role === "admin") {
+      eventId = session.eventId;
+    }
+  }
+
+  const event = accessCode
+    ? await getEventByAccessCode(accessCode)
+    : eventId
+    ? await getEventById(eventId)
+    : null;
+
+  if (!event) {
+    // No event resolved — send organizers to login / control room.
+    redirect("/login?mode=admin");
+  }
+
+  const joinUrl = `${baseUrl.replace(/\/$/, "")}/login?code=${encodeURIComponent(
+    event.accessCode
+  )}`;
+
+  return (
+    <DisplayClient
+      requestUrl={joinUrl}
+      accessCode={event.accessCode}
+      eventName={event.name}
+      eventId={event.id}
+    />
+  );
 }
