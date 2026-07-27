@@ -1,0 +1,51 @@
+{
+  "name": "isw-wave",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "postinstall": "prisma generate",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "prisma migrate reset --force",
+    "db:deploy": "prisma migrate deploy",
+    "db:turso": "tsx scripts/turso-migrate.ts",
+    "db:migrate-phase5": "tsx scripts/migrate-phase5-data.ts",
+    "showcase:dev": "npm run dev --prefix showcase",
+    "showcase:build": "npm run build --prefix showcase"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.17.4",
+    "@prisma/adapter-libsql": "^6.19.3",
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "^2.4.3",
+    "framer-motion": "^12.42.2",
+    "next": "14.2.35",
+    "pusher": "^5.3.4",
+    "pusher-js": "^8.5.0",
+    "qrcode": "^1.5.4",
+    "react": "^18",
+    "react-dom": "^18",
+    "resend": "^6.18.0",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.35",
+    "postcss": "^8",
+    "prisma": "^6.19.3",
+    "tailwindcss": "^3.4.1",
+    "tsx": "^4.23.1",
+    "typescript": "^5"
+  }
+}

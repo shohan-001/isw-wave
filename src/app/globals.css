@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  /* Public cinematic defaults — cyan on charcoal (admin overrides via EventTheme). */
+  --accent: #22d3ee;
+  --accent-rgb: 34 211 238;
+  --accent-glow: rgba(34, 211, 238, 0.45);
+  --cinema-ink: #07080c;
+  --cinema-panel: rgba(255, 255, 255, 0.045);
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  background-color: var(--cinema-ink);
+  color: #f0f4f8;
+  font-family: var(--font-body), system-ui, sans-serif;
+  background-image:
+    radial-gradient(
+      55% 50% at 12% 0%,
+      rgb(var(--accent-rgb) / 0.14),
+      transparent 62%
+    ),
+    radial-gradient(45% 40% at 100% 8%, rgba(34, 211, 238, 0.08), transparent 55%);
+  background-attachment: fixed;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Borderless glass — soft depth, no hard white outlines. */
+  .glass-edge {
+    position: relative;
+    background: var(--cinema-panel);
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+      0 24px 64px -28px rgba(0, 0, 0, 0.65);
+  }
+
+  .glass-edge::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.14) 0%,
+      rgba(255, 255, 255, 0.02) 40%,
+      rgba(34, 211, 238, 0.08) 100%
+    );
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+  }
+}
+
+/* Hide scrollbars on the projector/display page while keeping scrollability. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Skeleton shimmer used by search-result loaders. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.08),
+    transparent
+  );
+  animation: shimmer 1.6s infinite;
+}
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes cinema-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.cinema-float {
+  animation: cinema-float 5.5s ease-in-out infinite;
+}

@@ -1,0 +1,173 @@
+# ISW Wave
+
+Live song-request platform for campus events, hack nights, and parties.
+
+Guests scan a QR code, search YouTube, request tracks, and upvote the queue. Organizers moderate in a control room and drive **venue audio** from the admin laptop. A hall **display** stays silent and shows now playing, up next, and the join QR.
+
+**Live app:** [isw-wave.isharaka.dev](https://isw-wave.isharaka.dev)  
+**Showcase:** [wave.isharaka.dev](https://wave.isharaka.dev)
+**Author:** Isharaka Shohan
+
+> For AI / coding agents: read **[`AGENTS.md`](./AGENTS.md)** first. Update it after every major change.
+
+---
+
+## Core loop
+
+```
+Scan QR → search YouTube → request → (approve) → upvote queue → admin plays → display syncs → auto-advance
+```
+
+- **Admin device** = speakers / YouTube IFrame player (ToS-safe; display never plays audio).
+- Queue order is **vote-first**, then queue position.
+- When the live queue is empty, admin can loop a **fallback playlist** (also mirrored on the display).
+
+---
+
+## Stack
+
+| Layer | Choice |
+| --- | --- |
+| App | Next.js 14 (App Router) · TypeScript · Tailwind · Framer Motion |
+| DB | Prisma 6 + LibSQL (local SQLite file · production **Turso**) |
+| Realtime | Pusher Channels (optional; UI falls back to slow polling) |
+| Media | YouTube Data API v3 (search) · YouTube IFrame API (admin playback) |
+| Hosting | Vercel + custom domain `isw-wave.isharaka.dev` |
+
+---
+
+## Quick start (local)
+
+```bash
+npm install
+cp .env.example .env   # fill required vars below
+npx prisma migrate deploy
+npm run db:seed
+npm run dev            # http://localhost:3000
+```
+
+### Required `.env`
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Local file, e.g. `file:./prisma/dev.db` |
+| `YOUTUBE_API_KEY` | YouTube Data API v3 key (**server-only**) |
+| `ADMIN_PASSWORD` | Seeded organizer password |
+| `SESSION_SECRET` | Long random string for signed auth cookies |
+| `NEXT_PUBLIC_BASE_URL` | Public origin for QR links (`http://localhost:3000` locally) |
+
+### Optional but recommended
+
+| Variable | Purpose |
+| --- | --- |
+| `PUSHER_*` / `NEXT_PUBLIC_PUSHER_*` | Live votes / queue updates without aggressive polling |
+| `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | Production DB (required on Vercel) |
+| `MIN_SONG_SECONDS` | Filter Shorts/teasers (default `60`) |
+| `OWNER_PANEL_PATH` | Secret path segment for the staff ops console (`/ops/<path>`) — not linked publicly |
+| `OWNER_PASSWORD` | **Bootstrap only** — creates the first owner account, then stops working |
+| `LOG_RETENTION_DAYS` | Activity log retention (default `30`) |
+| `RESEND_API_KEY` / `EMAIL_FROM` | Approval + rejection emails. Optional — without it, approvals still work and the console gives you a copy-ready message |
+| `ORGANIZER_INVITE_CODE` | Comma-separated invite codes for `/organizer/signup`. **Signup is closed when unset** — this protects the shared YouTube quota |
+
+**YouTube key tip:** enable *YouTube Data API v3* in Google Cloud. Do **not** lock the key to HTTP referrers — it is used from the server. Prefer IP / API restriction.
+
+---
+
+## Screens & roles
+
+| Route | Who | Purpose |
+| --- | --- | --- |
+| `/` | Public | Landing page: what the product is, join CTA, organizer path |
+| `/login` | Guests + organizers | Join with access code, or admin login |
+| `/organizer/signup` | New organizers | Invite-gated account creation (`ORGANIZER_INVITE_CODE`) |
+| `/e/{slug}` | Guests | Search, request, upvote · **Display** button → hall view |
+| `/e/{slug}/display` | Projector / TV | Now playing, QR, up next (silent) |
+| `/display?code=` | Legacy display | Same UI; prefer slug URL |
+| `/admin` | Organizer laptop | Moderate, play audio, settings, change password, fallback |
+| `/organizer` | Organizer | List / switch / create events |
+| `/host` | Prospective organizer | Request to host an event (details + start time); `/host/{token}` tracks status |
+| `/organizer/set-password` | Approved organizer | One-time setup link from the approval email |
+| `/ops/{OWNER_PANEL_PATH}` | Site staff only | Hidden console: dashboard, hosting requests, events, bans, organizers, staff accounts, activity logs |
+
+### Local smoke test
+
+1. Log in as admin (`/login`) → open `/admin` with speakers.
+2. Open `/e/{slug}/display` on another tab (projector).
+3. On a phone (or another tab), open `/e/{slug}`, join with a name, search + request.
+4. Approve in admin → upvote from guest → confirm queue order and display.
+5. Let a track end (or hit Next) — next highest-voted song should start without replay glitches.
+
+---
+
+## Features (current)
+
+- Multi-event organizers (slug URL + access code per event)
+- Guest join by name + device lock (no email)
+- YouTube search with DB cache (15 min) and daily quota tracking
+- Pending moderation, bulk actions, blocked keywords / max duration
+- Crowd upvotes on pending + approved (not currently playing)
+- Vote-ranked “next” / auto-advance when a song ends
+- Fallback playlist when the live queue is empty
+- Display timeline sync (admin position ticks → smooth interpolation on display)
+- Cinematic public UI (cyan / charcoal; art-tinted stage)
+- Pusher realtime with slow safety polling + in-flight request dedupe
+- Public QR always prefers custom domain (never `*.vercel.app`)
+- Admin **change password** in Settings (`POST /api/auth/password`)
+- Hidden **staff ops** console (`/ops/<OWNER_PANEL_PATH>`) with named owner/moderator accounts, dashboard stats, guest bans, organizer password reset, and an IP-stamped **activity log** with cleanup tools
+- **Request to host** flow: organizers apply at `/host` with event details and start time; one click in the console creates their account, org, and event and emails a single-use password setup link
+- Daily play stats (`SongPlayStat`) pruned to **today only** (Turso-friendly)
+- Flutter **admin** app scaffold in [`apps/isw_wave_admin`](./apps/isw_wave_admin) (Bearer token auth)
+
+---
+
+## Scripts
+
+```bash
+npm run dev              # app
+npm run build
+npm run db:seed          # seed admin + default event
+npm run db:deploy        # prisma migrate deploy (local DATABASE_URL)
+npm run db:turso         # apply migrations to Turso (production)
+npm run db:turso -- --reset  # destructive Turso reset → then db:seed
+npm run showcase:dev     # marketing site in ./showcase (if present)
+```
+
+### Flutter admin app
+
+See [`apps/isw_wave_admin/README.md`](./apps/isw_wave_admin/README.md). Install Flutter, then `flutter create . --platforms=android,linux,windows` inside that folder once.
+
+---
+
+## Deployment (Vercel + Turso)
+
+Vercel’s filesystem is ephemeral — **local SQLite will not persist**. Use Turso:
+
+1. Create a Turso DB and set `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` on Vercel.
+2. Apply schema:  
+   `TURSO_DATABASE_URL=… TURSO_AUTH_TOKEN=… npm run db:turso`
+3. Set also: `YOUTUBE_API_KEY`, `SESSION_SECRET`, `NEXT_PUBLIC_BASE_URL=https://isw-wave.isharaka.dev`, Pusher keys, and optionally `OWNER_PANEL_PATH` + `OWNER_PASSWORD`.
+4. Attach custom domain `isw-wave.isharaka.dev`. Disable Deployment Protection for public guest/QR routes if guests would otherwise hit Vercel SSO.
+5. Redeploy after env changes.
+
+**Showcase / portfolio landing** lives in [`showcase/`](./showcase) at `wave.isharaka.dev`. Deploy it as its **own** Vercel project.
+
+---
+
+## Project map (high level)
+
+```
+src/app/           # pages + API routes (incl. ops/, api/owner/)
+src/lib/           # db, auth, youtube, realtime, polling, player, song-play-stats
+src/components/    # UI (incl. cinematic/)
+apps/isw_wave_admin/  # Flutter control-room app (admin only)
+prisma/            # schema + migrations + seed
+scripts/           # turso-migrate, phase data helpers
+showcase/          # marketing site (optional nested / separate repo)
+AGENTS.md          # source-of-truth notes for coding agents
+```
+
+---
+
+## License / status
+
+Private project · actively used for live events. See `AGENTS.md` for architecture gotchas and maintenance rules.

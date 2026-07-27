@@ -1,0 +1,350 @@
+// ISW Wave — Prisma schema (Phase 5: multi-tenancy)
+// LibSQL adapter: local SQLite in dev, Turso in production (see src/lib/db.ts).
+//
+// Phase 5: Organization owns Events; organizers sign up and create multiple
+// isolated events (slug URLs). Phase 2–4 auth/features unchanged per event.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Organizer account — one org per owner (MVP). Phase 6 may add team members.
+model Organization {
+  id      String @id @default(cuid())
+  name    String
+  ownerId String @unique
+  owner   User   @relation("OrgOwner", fields: [ownerId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events Event[] @relation("OrgEvents")
+}
+
+model Event {
+  id   String @id @default(cuid())
+  name String
+
+  // Public URL: /e/{slug}
+  slug String @unique
+
+  accessCode String @unique
+
+  organizationId String
+  organization   Organization @relation("OrgEvents", fields: [organizationId], references: [id])
+
+  // Legacy: creating admin user (same as org owner for migrated rows).
+  adminId String
+  admin   User   @relation("EventAdmin", fields: [adminId], references: [id])
+
+  requestLimit Int    @default(3)
+  approvalMode String @default("manual")
+
+  maxSongSeconds  Int    @default(480)
+  blockedKeywords String @default("")
+  autoModMode     String @default("reject")
+
+  accentColor String @default("#e0338f")
+  logoUrl     String @default("")
+  displayMode String @default("full")
+
+  currentRequestId String? @unique
+  // When the queue is empty, admin may loop FallbackTrack — mirror that on display.
+  currentFallbackId String @default("")
+
+  // Hall display timeline — last known YouTube position from admin player.
+  playbackPositionSec Float    @default(0)
+  playbackPlaying     Boolean  @default(false)
+  playbackUpdatedAt   DateTime?
+
+  // Staff kill switch: guests can't join / search / request / vote. Admin + ops stay.
+  suspended     Boolean   @default(false)
+  suspendedAt   DateTime?
+  suspendReason String    @default("")
+
+  // Per-event YouTube search budget (units/day). 0 = unlimited (global pool only).
+  youtubeDailyQuotaCap Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participants   Participant[]          @relation("EventParticipants")
+  requests       Request[]              @relation("EventRequests")
+  fallbackTracks FallbackTrack[]        @relation("EventFallback")
+  current        Request?               @relation("CurrentlyPlaying", fields: [currentRequestId], references: [id])
+  youtubeQuotaDays EventYouTubeQuotaDay[]
+
+  @@index([adminId])
+  @@index([organizationId])
+  @@index([suspended])
+}
+
+model User {
+  id           String  @id @default(cuid())
+  username     String  @unique
+  email        String  @unique
+  passwordHash String
+  isAdmin      Boolean @default(true)
+
+  // Site staff for the ops console: "" = organizer, "owner" | "moderator" = staff.
+  staffRole  String    @default("")
+  disabledAt DateTime?
+
+  // Max events this organizer may create. 0 = unlimited (existing accounts).
+  eventLimit Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  organization Organization? @relation("OrgOwner")
+  events       Event[]       @relation("EventAdmin")
+
+  @@index([staffRole])
+}
+
+// Shortcut into organizer signup for people staff already trust, so they skip
+// the EventRequest review. Codes are stored in plaintext on purpose: staff need
+// to re-read one to resend it, and the code only reaches the value of an
+// organizer account, which `eventLimit` and `revokedAt` already bound.
+model InviteCode {
+  id   String @id @default(cuid())
+  code String @unique
+
+  // Who the code was handed to — the audit trail env vars could never give us.
+  label String @default("")
+
+  // 0 = unlimited uses. usedCount only counts completed signups.
+  maxUses   Int @default(0)
+  usedCount Int @default(0)
+
+  // Copied onto the organizer created with this code. 0 = unlimited events.
+  eventLimit Int @default(0)
+
+  expiresAt DateTime?
+  revokedAt DateTime?
+
+  createdById String   @default("")
+  createdAt   DateTime @default(now())
+  lastUsedAt  DateTime?
+
+  @@index([revokedAt])
+}
+
+// Organizer applies to host an event; staff approve in the ops console. Approval
+// creates the User + Organization + Event and records the ids here so any event
+// can be traced back to the request that produced it.
+model EventRequest {
+  id String @id @default(cuid())
+
+  // Lets the requester check status at /host/{publicToken} without an account.
+  publicToken String @unique
+
+  contactName  String
+  contactEmail String
+  contactPhone String @default("")
+  orgName      String
+
+  eventName      String
+  eventDetails   String
+  venue          String @default("")
+  expectedGuests Int    @default(0)
+
+  // Schedule is metadata for review only — guest access is not gated on it.
+  startsAt DateTime
+  timezone String @default("")
+
+  // pending | approved | rejected
+  status String @default("pending")
+
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNote   String    @default("")
+
+  createdUserId  String @default("")
+  createdEventId String @default("")
+
+  ip        String @default("")
+  userAgent String @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([contactEmail])
+}
+
+// Single-use link so approval emails never carry a plaintext password.
+model PasswordSetupToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Audit trail for staff, organizer, and guest actions. Pruned by retention days.
+model ActivityLog {
+  id String @id @default(cuid())
+
+  // e.g. staff.login, staff.login_failed, guest.ban, organizer.password_reset
+  type String
+
+  // "staff" | "organizer" | "guest" | "system"
+  actorType  String @default("system")
+  actorId    String @default("")
+  actorLabel String @default("")
+
+  eventId    String @default("")
+  targetType String @default("")
+  targetId   String @default("")
+
+  details   String @default("")
+  ip        String @default("")
+  userAgent String @default("")
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([type, createdAt])
+  @@index([actorId])
+}
+
+model Participant {
+  id          String @id @default(cuid())
+  eventId     String
+  displayName String
+  deviceId    String
+
+  banned    Boolean   @default(false)
+  bannedAt  DateTime?
+  banReason String    @default("")
+
+  createdAt DateTime @default(now())
+
+  event    Event     @relation("EventParticipants", fields: [eventId], references: [id])
+  requests Request[] @relation("ParticipantRequests")
+  votes    Vote[]    @relation("ParticipantVotes")
+
+  @@unique([eventId, deviceId])
+  @@index([deviceId])
+  @@index([eventId])
+}
+
+model Request {
+  id              String @id @default(cuid())
+  eventId         String
+  youtubeVideoId  String
+  title           String
+  thumbnailUrl    String
+  durationSeconds Int
+  channelName     String @default("")
+
+  participantId String
+  requesterName String
+
+  status String @default("pending")
+
+  queuePosition Int?
+  voteCount     Int     @default(0)
+  flagged       Boolean @default(false)
+  flagReason    String  @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  event         Event       @relation("EventRequests", fields: [eventId], references: [id])
+  participant   Participant @relation("ParticipantRequests", fields: [participantId], references: [id])
+  votes         Vote[]      @relation("RequestVotes")
+  nowPlayingFor Event?      @relation("CurrentlyPlaying")
+
+  @@index([eventId, status])
+  @@index([participantId])
+  @@index([eventId, voteCount])
+}
+
+model Vote {
+  id            String @id @default(cuid())
+  requestId     String
+  participantId String
+
+  createdAt DateTime @default(now())
+
+  request     Request     @relation("RequestVotes", fields: [requestId], references: [id], onDelete: Cascade)
+  participant Participant @relation("ParticipantVotes", fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, participantId])
+  @@index([requestId])
+}
+
+model FallbackTrack {
+  id              String @id @default(cuid())
+  eventId         String
+  youtubeVideoId  String
+  title           String
+  thumbnailUrl    String
+  durationSeconds Int    @default(0)
+  channelName     String @default("")
+  position        Int
+
+  createdAt DateTime @default(now())
+
+  event Event @relation("EventFallback", fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, position])
+}
+
+// Phase 5 — YouTube search cache (shared across events, 15 min TTL).
+model SearchCache {
+  id        String   @id @default(cuid())
+  queryKey  String   @unique
+  results   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+// Daily YouTube API quota counter (search.list = 100 units, videos.list = 1).
+model YouTubeQuotaDay {
+  dayKey    String @id
+  unitsUsed Int    @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+// Per-event daily YouTube unit counter — same SEARCH_FLOW_COST as the global pool.
+model EventYouTubeQuotaDay {
+  id        String @id @default(cuid())
+  dayKey    String
+  eventId   String
+  event     Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  unitsUsed Int    @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([dayKey, eventId])
+  @@index([eventId])
+  @@index([dayKey])
+}
+
+// Per-day play counts (UTC dayKey). Rows older than today are pruned on write.
+model SongPlayStat {
+  id              String @id @default(cuid())
+  dayKey          String
+  eventId         String
+  youtubeVideoId  String
+  title           String
+  thumbnailUrl    String @default("")
+  playCount       Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([dayKey, eventId, youtubeVideoId])
+  @@index([dayKey, playCount])
+  @@index([eventId, dayKey])
+}

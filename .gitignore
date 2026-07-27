@@ -1,0 +1,64 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+node_modules/
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# testing
+/coverage
+
+# next.js
+.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files (never commit real secrets; .env.example is the tracked template)
+.env
+.env*.local
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+/src/generated/prisma
+
+# Local SQLite dev database (LibSQL adapter)
+prisma/dev.db
+prisma/dev.db-journal
+*.db
+*.db-journal
+
+# local editor / AI tooling
+.claude/
+.agents/
+.windsurf/
+skills-lock.json
+
+# Separate repo: github.com/shohan-001/isw-wave-showcase
+showcase/
+
+# Flutter
+apps/isw_wave_admin/.dart_tool/
+apps/isw_wave_admin/.packages
+apps/isw_wave_admin/build/
+apps/isw_wave_admin/.flutter-plugins
+apps/isw_wave_admin/.flutter-plugins-dependencies
+apps/isw_wave_admin/android/.gradle/
+apps/isw_wave_admin/android/local.properties
